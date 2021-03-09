@@ -1,0 +1,2 @@
+## Provisioning Helper
+Microsoft Azure provides provisioning agents for Linux VMs in the form of the [walinuxagent](https://github.com/Azure/WALinuxAgent) or [cloud-init](https://github.com/canonical/cloud-init) (recommended). However, there could be a scenario when you don't want to use either of these applications to register your VM with azure. This script serves as a sample agent, feel free to use it as-is or extend it to fit your needs.
