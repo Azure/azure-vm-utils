@@ -1,14 +1,7 @@
-# Project
+# Azure VM Utilities
 
-> This repo has been populated by an initial template to help get you started. Please
-> make sure to update the content to build a great experience for community-building.
-
-As the maintainer of this project, please make a few updates:
-
-- Improving this README.MD file to provide a great experience
-- Updating SUPPORT.MD with content about this project's support experience
-- Understanding the security reporting process in SECURITY.MD
-- Remove this section from the README
+A collection of utilities to improve Azure VM deployment/configuration experience
+- [register_with_azure](https://github.com/Azure/azure-vm-utils/tree/main/provisioning_helper): a script to register your VM with Azure at deployment time
 
 ## Contributing
 
