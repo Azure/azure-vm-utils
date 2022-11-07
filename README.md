@@ -1,6 +1,7 @@
 # Azure VM Utilities
 
 A collection of utilities to improve Azure VM deployment/configuration experience
+- [lpt](https://github.com/Azure/azure-vm-utils/tree/main/lpt): tools for ingesting data from a VM for testing & performance data collection
 - [register_with_azure](https://github.com/Azure/azure-vm-utils/tree/main/provisioning_helper): a script to register your VM with Azure at deployment time
 
 ## Contributing
