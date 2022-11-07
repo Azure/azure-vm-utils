@@ -1,0 +1,44 @@
+[tool.poetry]
+name = "lpt"
+version = "0.1.0"
+description = ""
+authors = ["Chris Patterson <cpatterson@microsoft.com>"]
+
+[tool.poetry.scripts]
+lpt = "lpt.main:main"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+python-dateutil = "^2.8.2"
+paramiko = "^2.11.0"
+
+[tool.poetry.dev-dependencies]
+WhatIsMyIP = "^2022.7.10"
+isort = "^5.10.1"
+black = "^22.10.0"
+pylint = "^2.15.5"
+mypy = "^0.982"
+flake8 = "^5.0.4"
+pyright = "^1.1.277"
+autoflake = "^1.7.7"
+types-paramiko = "^2.11.6"
+types-python-dateutil = "^2.8.19"
+azure-mgmt-compute = "^29.0.0"
+azure-mgmt-storage = "^20.1.0"
+azure-mgmt-resource = "^21.2.1"
+azure-mgmt-network = "^22.1.0"
+azure-identity = "^1.11.0"
+pytest = "^7.2.0"
+
+[tool.pylint."messages control"]
+disable = ["missing-docstring", "invalid-name", "duplicate-code", "too-many-instance-attributes"]
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "DEBUG"
+log_cli_format = "%(asctime)s.%(msecs)03d [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
