@@ -138,7 +138,10 @@ class Journal:
 
         entries = [JournalEntry.parse(json.loads(log)) for log in logs.splitlines()]
         for entry in entries:
-            # logger.debug("entry=%r", entry)
+            if not entry.message:
+                logger.debug("ignoring entry=%r (no message)", entry)
+                continue
+
             if entry.message.startswith("Linux version") and boot_entries:
                 boot_journal = cls(entries=boot_entries)
                 journals.append(boot_journal)
