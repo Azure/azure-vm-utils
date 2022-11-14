@@ -167,6 +167,21 @@ class Journal:
         for entry in self.find_entries(".*link becomes ready"):
             events.append(entry.as_event("LINK_READY"))
 
+        for entry in self.find_entries("eth0: VF slot .* added"):
+            events.append(entry.as_event("ETH0_VF_SLOT_ADDED"))
+
+        for entry in self.find_entries("eth0: VF registering"):
+            events.append(entry.as_event("ETH0_VF_REGISTERING"))
+
+        for entry in self.find_entries(": joined to eth0"):
+            events.append(entry.as_event("ETH0_VF_JOINED"))
+
+        for entry in self.find_entries("eth0: Data path switched to VF"):
+            events.append(entry.as_event("ETH0_DATA_PATH_SWITCHED_TO_VF"))
+
+        for entry in self.find_entries("eth0: Data path switched from VF"):
+            events.append(entry.as_event("ETH0_DATA_PATH_SWITCHED_FROM_VF"))
+
         for stage in ["DISCOVER", "OFFER", "REQUEST", "ACK"]:
             for entry in self.find_entries(f"DHCP{stage}"):
                 events.append(entry.as_event(f"EPHEMERAL_DHCP_{stage}"))
