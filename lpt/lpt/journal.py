@@ -92,7 +92,7 @@ class Journal:
     def load_remote(
         cls, ssh: SSH, *, output_dir: Path, boot: bool = False
     ) -> List["Journal"]:
-        return cls.load(output_dir=output_dir, journal_path=None, run=ssh.run)  # type: ignore
+        return cls.load(output_dir=output_dir, journal_path=None, run=ssh.run, boot=boot)  # type: ignore
 
     @classmethod
     def load(
