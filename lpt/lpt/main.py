@@ -218,7 +218,6 @@ def main():
             "nargs": "+",
         },
         "--journal-path": {
-            "default": "/var/log/journal",
             "help": "journal directory",
             "type": Path,
         },
