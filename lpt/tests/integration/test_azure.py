@@ -218,7 +218,7 @@ def _verify_boot(*, image: str, output_dir: Path, ssh: SSH):
 
     ssh.run(["sudo", "sync"], capture_output=False, check=False)
 
-    journals = Journal.load_remote(ssh, output_dir=output_dir)
+    journals = Journal.load_remote(ssh, output_dir=output_dir, boot=True)
     assert len(journals) > 0
 
     systemd = Systemd.load_remote(ssh, output_dir=output_dir)

@@ -89,17 +89,27 @@ class Journal:
     entries: List[JournalEntry]
 
     @classmethod
-    def load_remote(cls, ssh: SSH, *, output_dir: Path) -> List["Journal"]:
+    def load_remote(
+        cls, ssh: SSH, *, output_dir: Path, boot: bool = False
+    ) -> List["Journal"]:
         return cls.load(output_dir=output_dir, journal_path=None, run=ssh.run)  # type: ignore
 
     @classmethod
     def load(
-        cls, *, output_dir: Path, journal_path: Optional[Path], run=subprocess.run
+        cls,
+        *,
+        output_dir: Path,
+        journal_path: Optional[Path],
+        run=subprocess.run,
+        boot: bool = False,
     ) -> List["Journal"]:
         if journal_path and journal_path.is_file():
             data = journal_path.read_bytes()
         else:
             cmd = ["journalctl", "-o", "json", "--no-pager"]
+            if boot:
+                cmd.append("-b")
+
             if journal_path:
                 cmd.extend(["-D", journal_path.as_posix()])
 
