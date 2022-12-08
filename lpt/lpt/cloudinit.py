@@ -226,6 +226,13 @@ class CloudInit:
             try:
                 entry = CloudInitEntry.parse(line, reference_monotonic)
             except ValueError:
+                if boot_entries:
+                    last_entry = boot_entries[-1]
+                    last_entry.log_line += "\n" + line
+                    last_entry.message += "\n" + line
+                    logger.warning("added line=%s to entry=%r", line, last_entry)
+                else:
+                    logger.warning("failed to parse line=%s", line)
                 continue
             finally:
                 boot_logs.append(line)
@@ -365,7 +372,6 @@ class CloudInit:
         self,
     ) -> List[Union[CloudInitEvent, CloudInitFrame]]:
         events: List[Union[CloudInitEvent, CloudInitFrame]] = []
-
         events.extend(self.get_frames())
 
         for entry in self.find_entries("running 'init-local'"):
@@ -395,17 +401,17 @@ class CloudInit:
         for entry in self.find_entries("", event_type="finish"):
             events.append(entry.as_event("CLOUDINIT_FRAME_FINISH"))
 
-        for entry in self.find_entries("ERROR"):
+        for entry in [e for e in self.entries if e.log_level == "ERROR"]:
             events.append(
                 entry.as_event("CLOUDINIT_ERROR", severity=EventSeverity.WARNING)
             )
 
-        for entry in self.find_entries("WARNING"):
+        for entry in [e for e in self.entries if e.log_level == "WARNING"]:
             events.append(
                 entry.as_event("CLOUDINIT_WARNING", severity=EventSeverity.WARNING)
             )
 
-        for entry in self.find_entries("CRITICAL"):
+        for entry in [e for e in self.entries if e.log_level == "CRITICAL"]:
             events.append(
                 entry.as_event("CLOUDINIT_CRITICAL", severity=EventSeverity.WARNING)
             )

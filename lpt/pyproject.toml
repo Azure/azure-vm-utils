@@ -13,7 +13,6 @@ python-dateutil = "^2.8.2"
 paramiko = "^2.11.0"
 
 [tool.poetry.dev-dependencies]
-WhatIsMyIP = "^2022.7.10"
 isort = "^5.10.1"
 black = "^22.10.0"
 pylint = "^2.15.5"
