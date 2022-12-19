@@ -104,31 +104,33 @@ class SSH:
         )
         logger.debug("connected to ssh server (host=%s, user=%s)", self.host, self.user)
 
-    def connect_with_retries(self, attempts: int = 300, sleep: float = 1.0) -> bool:
+    def connect_with_retries(
+        self, *, timeout_seconds: int = 300, retry_sleep: float = 1.0
+    ) -> bool:
+        timeout = timeout_seconds + time.time()
         while True:
-            attempts -= 1
             try:
                 self.connect()
                 return True
             except paramiko.ssh_exception.AuthenticationException as exc:
-                logger.debug("failed auth: %r", exc)
+                logger.info("failed auth: %r", exc)
             except paramiko.ssh_exception.BadHostKeyException as exc:
-                logger.debug("failed to verify host key: %r", exc)
+                logger.info("failed to verify host key: %r", exc)
             except paramiko.ssh_exception.NoValidConnectionsError as exc:
-                logger.debug("failed to connect: %r", exc)
+                logger.info("failed to connect: %r", exc)
             except paramiko.ssh_exception.SSHException as exc:
-                logger.debug("failed to connect: %r", exc)
+                logger.info("failed to connect: %r", exc)
             except TimeoutError as exc:
-                logger.debug("failed to conenct due to timeout: %r", exc)
+                logger.info("failed to conenct due to timeout: %r", exc)
             except socket.error as exc:
-                logger.debug("failed to connect due to socket error: %r", exc)
+                logger.info("failed to connect due to socket error: %r", exc)
 
             self.close()
 
-            if attempts <= 0:
+            if time.time() + retry_sleep < timeout:
+                time.sleep(retry_sleep)
+            else:
                 break
-
-            time.sleep(sleep)
 
         return False
 
