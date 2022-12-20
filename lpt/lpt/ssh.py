@@ -312,10 +312,10 @@ class SSH:
                 return status
 
             if status == "running":
-                logger.debug("system ready")
+                logger.info("system ready")
                 return status
 
-            logger.debug("system status: %s (rc=%d)", status, proc.returncode)
+            logger.info("system status: %s (rc=%d)", status, proc.returncode)
             time.sleep(sleep)
 
         logger.error("timed out waiting for system ready: %r", status)
