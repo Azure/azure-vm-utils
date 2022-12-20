@@ -206,7 +206,7 @@ class SSH:
         channel = transport.open_session()
         channel.settimeout(timeout)
 
-        logger.debug("running command: %r", cmd_string)
+        logger.info("running command: %r", cmd_string)
         channel.exec_command(cmd_string)
 
         logger.debug("shutting down write...")
@@ -255,8 +255,8 @@ class SSH:
         returncode = channel.recv_exit_status()
         stdout_out = stdout_io.getvalue()
         stderr_out = stderr_io.getvalue()
-        logger.debug(
-            "command exited with: %d (stdout=%d stderr=%d)",
+        logger.info(
+            "command exited with: %d (stdout_len=%d stderr_len=%d)",
             returncode,
             len(stdout_out),
             len(stderr_out),
