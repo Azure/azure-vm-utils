@@ -20,7 +20,6 @@ class ServiceGraph:
         filter_inactive: bool = True,
         frames: Optional[List[CloudInitFrame]] = None,
     ) -> None:
-
         self.service_name = service_name
         self.filter_services = filter_services
         self.filter_conditional_result_no = filter_conditional_result_no
