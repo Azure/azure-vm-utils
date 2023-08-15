@@ -101,6 +101,7 @@ class SSH:
             username=self.user,
             sock=self.proxy_sock,
             pkey=pkey,
+            timeout=30,
         )
         logger.debug("connected to ssh server (host=%s, user=%s)", self.host, self.user)
 
