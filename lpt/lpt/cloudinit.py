@@ -247,7 +247,7 @@ class CloudInit:
                     last_entry = boot_entries[-1]
                     last_entry.log_line += "\n" + line
                     last_entry.message += "\n" + line
-                    logger.warning("added line=%s to entry=%r", line, last_entry)
+                    logger.debug("added line=%s to entry=%r", line, last_entry)
                 else:
                     logger.warning("failed to parse line=%s", line)
                 continue
