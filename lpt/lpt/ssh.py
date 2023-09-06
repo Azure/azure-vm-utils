@@ -34,28 +34,29 @@ class SSH:
 
     def close(self) -> None:
         if self.client:
-            logger.debug("closing client...")
+            logger.info("closing client...")
             self.client.close()
             self.client = None
 
         if self.proxy_sock:
-            logger.debug("closing proxy sock...")
+            logger.info("closing proxy sock...")
             self.proxy_sock.close()
             self.proxy_sock = None
 
         if self.transport:
-            logger.debug("closing proxy transport...")
+            logger.info("closing proxy transport...")
             self.transport.close()
             self.transport = None
 
         if self.proxy_client:
-            logger.debug("closing proxy client...")
+            logger.info("closing proxy client...")
             self.proxy_client.close()
             self.proxy_client = None
 
-        logger.debug("closed client...")
+        logger.info("closed client...")
 
     def connect(self) -> None:
+        logger.info("attempting to connect...")
         if self.private_key and isinstance(self.private_key, Path):
             pkey = paramiko.RSAKey.from_private_key_file(str(self.private_key))
         elif self.private_key and isinstance(self.private_key, str):
@@ -69,7 +70,7 @@ class SSH:
         if self.proxy_host:
             self.proxy_client = paramiko.SSHClient()
             self.proxy_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            logger.debug(
+            logger.info(
                 "connecting to proxy ssh server (proxy_host=%s, proxy_user=%s)",
                 self.proxy_host,
                 self.proxy_user,
@@ -77,7 +78,7 @@ class SSH:
             self.proxy_client.connect(
                 hostname=self.proxy_host, username=self.proxy_user
             )
-            logger.debug(
+            logger.info(
                 "connected to proxy ssh server (proxy_host=%s, proxy_user=%s)",
                 self.proxy_host,
                 self.proxy_user,
@@ -87,13 +88,13 @@ class SSH:
             if not self.transport:
                 raise RuntimeError("unable to open transport")
 
-            logger.debug("opening transport channel to %s...", self.host)
+            logger.info("opening transport channel to %s...", self.host)
             self.proxy_sock = self.transport.open_channel(
                 "direct-tcpip", (self.host, 22), ("", 0)
             )
 
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        logger.debug(
+        logger.info(
             "connecting to ssh server (host=%s, user=%s)", self.host, self.user
         )
         self.client.connect(
@@ -103,7 +104,7 @@ class SSH:
             pkey=pkey,
             timeout=30,
         )
-        logger.debug("connected to ssh server (host=%s, user=%s)", self.host, self.user)
+        logger.info("connected to ssh server (host=%s, user=%s)", self.host, self.user)
 
     def connect_with_retries(
         self, *, timeout_seconds: int = 300, retry_sleep: float = 1.0
@@ -122,7 +123,7 @@ class SSH:
             except paramiko.ssh_exception.SSHException as exc:
                 logger.info("failed to connect: %r", exc)
             except TimeoutError as exc:
-                logger.info("failed to conenct due to timeout: %r", exc)
+                logger.info("failed to connect due to timeout: %r", exc)
             except socket.error as exc:
                 logger.info("failed to connect due to socket error: %r", exc)
 
@@ -140,12 +141,12 @@ class SSH:
 
         proc = self.run(cmd, capture_output=True, check=False)
         if proc.returncode != 0:
-            logger.debug("falling back to fetching %r with sudo...", remote_path)
+            logger.info("falling back to fetching %r with sudo...", remote_path)
             cmd.insert(0, "sudo")
             try:
                 proc = self.run(cmd, capture_output=True, check=True)
             except subprocess.CalledProcessError as exc:
-                logger.debug("failed to fetch file %r: %r", remote_path, exc)
+                logger.info("failed to fetch file %r: %r", remote_path, exc)
                 raise FileNotFoundError(2, "No such file or directory") from exc
 
         assert isinstance(proc.stdout, bytes)
@@ -156,12 +157,12 @@ class SSH:
 
         proc = self.run(cmd, capture_output=True, check=False)
         if proc.returncode != 0:
-            logger.debug("falling back to fetching %r with sudo...", remote_path)
+            logger.info("falling back to fetching %r with sudo...", remote_path)
             cmd.insert(0, "sudo")
             try:
                 proc = self.run(cmd, capture_output=True, check=True)
             except subprocess.CalledProcessError as exc:
-                logger.debug("failed to fetch file %r: %r", remote_path, exc)
+                logger.info("failed to fetch file %r: %r", remote_path, exc)
                 raise FileNotFoundError(2, "No such file or directory") from exc
 
         assert isinstance(proc.stdout, bytes)
@@ -172,12 +173,12 @@ class SSH:
 
         proc = self.run(cmd, capture_output=True, check=False, text=True)
         if proc.returncode != 0:
-            logger.debug("falling back to fetching %r with sudo...", remote_path)
+            logger.info("falling back to fetching %r with sudo...", remote_path)
             cmd.insert(0, "sudo")
             try:
                 proc = self.run(cmd, capture_output=True, check=True, text=True)
             except subprocess.CalledProcessError as exc:
-                logger.debug("failed to fetch file %r: %r", remote_path, exc)
+                logger.info("failed to fetch file %r: %r", remote_path, exc)
                 raise FileNotFoundError(2, "No such file or directory") from exc
 
         assert isinstance(proc.stdout, str)
@@ -200,7 +201,7 @@ class SSH:
 
         assert self.client
 
-        logger.debug("opening ssh channel...")
+        logger.info("opening ssh channel...")
         transport = self.client.get_transport()
         assert transport
 
@@ -210,7 +211,7 @@ class SSH:
         logger.info("running command: %r", cmd_string)
         channel.exec_command(cmd_string)
 
-        logger.debug("shutting down write...")
+        logger.info("shutting down write...")
         channel.shutdown_write()
 
         stdout_io = io.BytesIO()
@@ -226,7 +227,7 @@ class SSH:
             pending_data = channel.recv_ready() or channel.recv_stderr_ready()
 
             if not exited:
-                logger.debug("waiting for command to exit: %r", cmd_string)
+                logger.info("waiting for command to exit: %r", cmd_string)
             elif pending_data:
                 logger.debug("reading pending data: %r", cmd_string)
             else:
@@ -284,9 +285,9 @@ class SSH:
     def reboot(self) -> None:
         cmd = ["sudo", "shutdown", "-r", "1"]
 
-        logger.debug("rebooting vm...")
+        logger.info("rebooting vm...")
         self.run(cmd, capture_output=True, check=True, text=True)
-        logger.debug("rebooted vm, will start in 60s...")
+        logger.info("rebooted vm, will start in 60s...")
 
     def wait_for_system_ready(self, *, attempts: int = 300, sleep: float = 1.0) -> str:
         try:
@@ -303,7 +304,7 @@ class SSH:
 
         cmd = ["systemctl", "is-system-running"]
 
-        logger.debug("waiting for system ready...")
+        logger.info("waiting for system ready...")
         for _ in range(attempts):
             proc = self.run(cmd, capture_output=True, check=False, text=True)
             status = proc.stdout.strip()
