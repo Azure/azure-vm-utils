@@ -10,7 +10,7 @@ lpt = "lpt.main:main"
 [tool.poetry.dependencies]
 python = "^3.8"
 python-dateutil = "^2.8.2"
-paramiko = "^2.11.0"
+paramiko = "^3.4.0"
 
 [tool.poetry.dev-dependencies]
 isort = "^5.10.1"
