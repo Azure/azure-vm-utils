@@ -1,14 +1,33 @@
 # Project
 
-> This repo has been populated by an initial template to help get you started. Please
-> make sure to update the content to build a great experience for community-building.
+This project includes a utility to help identify Azure NVMe devices.
 
-As the maintainer of this project, please make a few updates:
+## Quick Start
 
-- Improving this README.MD file to provide a great experience
-- Updating SUPPORT.MD with content about this project's support experience
-- Understanding the security reporting process in SECURITY.MD
-- Remove this section from the README
+To build:
+
+```
+cmake .
+make
+```
+
+To install /usr/local/bin/azure-nvme-id and /lib/udev/rules.d/80-azure-nvme.rules:
+
+```
+sudo make install
+```
+
+To run:
+
+```
+sudo azure-nvme-id
+```
+
+To run in udev mode:
+
+```
+DEVNAME=/dev/nvme0n1 azure-nvme-id --udev
+```
 
 ## Contributing
 
