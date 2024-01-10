@@ -219,15 +219,16 @@ char *query_namespace_vs(const char *namespace_path)
         .data_len = sizeof(ns),
     };
 
-    int ret = ioctl(fd, NVME_IOCTL_ADMIN_CMD, &cmd);
-    if (ret < 0)
+    if (ioctl(fd, NVME_IOCTL_ADMIN_CMD, &cmd) < 0)
     {
         perror("ioctl");
+        free(ns);
         close(fd);
         return NULL;
     }
 
     char *vs = strndup((const char *)ns->vs, sizeof(ns->vs));
+
     free(ns);
     close(fd);
 
