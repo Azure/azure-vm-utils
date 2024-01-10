@@ -435,8 +435,6 @@ int main(int argc, const char **argv)
     {
         return execute_udev_import();
     }
-    else
-    {
-        return enumerate_azure_nvme_controllers();
-    }
+
+    return enumerate_azure_nvme_controllers();
 }
