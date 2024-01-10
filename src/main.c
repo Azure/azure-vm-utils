@@ -378,6 +378,11 @@ int main(int argc, const char **argv)
             udev_mode = true;
             continue;
         }
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
+        {
+            printf("Usage: %s [--debug] [--udev|--help]\n", argv[0]);
+            return 0;
+        }
     }
 
     if (debug)
