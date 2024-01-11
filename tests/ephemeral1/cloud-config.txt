@@ -1,0 +1,7 @@
+#cloud-config
+fs_setup:
+  - device: "/dev/disk/azure/local/by-index/1"
+    filesystem: "ext4"
+mounts:
+  # x-systemd.makefs will re-format the disk on re-allocation/migration
+  - ["/dev/disk/azure/local/by-index/1", "/mnt/ephemeral1", "ext4", "x-systemd.makefs", "0", "2"]
