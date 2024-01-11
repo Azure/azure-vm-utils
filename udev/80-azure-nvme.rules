@@ -1,4 +1,4 @@
-ACTION!="add", GOTO="azure_nvme_end"
+ACTION!="add|change", GOTO="azure_nvme_end"
 SUBSYSTEM!="block", GOTO="azure_nvme_end"
 KERNEL!="nvme*", GOTO="azure_nvme_end"
 ATTR{nsid}!="?*", GOTO="azure_nvme_end"
