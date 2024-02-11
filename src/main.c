@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "nvme.h"
+#include "version.h"
 
 #define MAX_PATH 4096
 #define MICROSOFT_NVME_VENDOR_ID 0x1414
@@ -378,9 +379,14 @@ int main(int argc, const char **argv)
             udev_mode = true;
             continue;
         }
+        if (strcmp(argv[i], "--version") == 0)
+        {
+            printf("azure-nvme-id v%s\n", VERSION);
+            return 0;
+        }
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
         {
-            printf("Usage: %s [--debug] [--udev|--help]\n", argv[0]);
+            printf("Usage: %s [--debug] [--udev|--help|--version]\n", argv[0]);
             return 0;
         }
     }
