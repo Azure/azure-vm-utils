@@ -10,8 +10,17 @@ enable_testing()
 add_compile_options(-Wextra -Wall -Werror -std=gnu11 -D_GNU_SOURCE=1)
 add_executable(azure-nvme-id src/main.c)
 
-install(TARGETS azure-nvme-id DESTINATION bin)
-install(FILES udev/80-azure-nvme.rules DESTINATION /lib/udev/rules.d)
+set(AZURE_NVME_ID_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/sbin")
+set(UDEV_RULES_INSTALL_DIR "/lib/udev/rules.d")
+
+configure_file(
+  "${PROJECT_SOURCE_DIR}/udev/80-azure-nvme.rules.in"
+  "${PROJECT_BINARY_DIR}/udev/80-azure-nvme.rules"
+  @ONLY
+)
+
+install(TARGETS azure-nvme-id DESTINATION ${AZURE_NVME_ID_INSTALL_DIR})
+install(FILES udev/80-azure-nvme.rules DESTINATION ${UDEV_RULES_INSTALL_DIR})
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
