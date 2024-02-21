@@ -21,7 +21,7 @@ LABEL="azure_nvme_remote_start"
 GOTO="azure_nvme_start"
 
 LABEL="azure_nvme_start"
-ATTR{nsid}=="?*", IMPORT{program}="/usr/local/bin/azure-nvme-id --udev"
+ATTR{nsid}=="?*", IMPORT{program}="@AZURE_NVME_ID_INSTALL_DIR@/azure-nvme-id --udev"
 ENV{AZURE_NVME_TYPE}=="os", SYMLINK+="disk/azure/os"
 ENV{AZURE_NVME_TYPE}=="?*", ENV{AZURE_NVME_INDEX}=="?*", SYMLINK+="disk/azure/$env{AZURE_NVME_TYPE}/by-index/$env{AZURE_NVME_INDEX}"
 ENV{AZURE_NVME_TYPE}=="?*", ENV{AZURE_NVME_LUN}=="?*", SYMLINK+="disk/azure/$env{AZURE_NVME_TYPE}/by-lun/$env{AZURE_NVME_LUN}"
