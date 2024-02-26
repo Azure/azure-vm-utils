@@ -128,7 +128,7 @@ char *read_file_as_string(const char *path)
     fclose(file);
 
     // Null-terminate the string.
-    contents[length] = '\0';
+    contents[bytes_read] = '\0';
 
     DEBUG_PRINTF("%s => %s\n", path, contents);
     return contents;
