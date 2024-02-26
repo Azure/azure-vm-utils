@@ -87,9 +87,27 @@ char *read_file_as_string(const char *path)
     }
 
     // Determine the file size
-    fseek(file, 0, SEEK_END);
+    if (fseek(file, 0, SEEK_END) < 0)
+    {
+        perror("fseek");
+        fclose(file);
+        return NULL;
+    }
+
     long length = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    if (length < 0)
+    {
+        perror("ftell");
+        fclose(file);
+        return NULL;
+    }
+
+    if (fseek(file, 0, SEEK_SET) < 0)
+    {
+        perror("fseek");
+        fclose(file);
+        return NULL;
+    }
 
     // Allocate size of file plus one byte for null.
     char *contents = malloc(length + 1);
@@ -101,7 +119,12 @@ char *read_file_as_string(const char *path)
     }
 
     // Read file contents.
-    fread(contents, 1, length, file);
+    size_t bytes_read = fread(contents, 1, length, file);
+    if ((long)bytes_read < length)
+    {
+        DEBUG_PRINTF("short read on %s, contents probably changed", path);
+    }
+
     fclose(file);
 
     // Null-terminate the string.
