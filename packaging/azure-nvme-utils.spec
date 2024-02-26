@@ -1,11 +1,15 @@
+%global version %(git describe --tags --abbrev=0 | sed 's/^v//')
+%global release %(git describe --tags --dirty | sed 's/^[^-]*-//' | sed 's/-/_/g')
+%global sourcedir %(pwd)
+
 Name:           azure-nvme-utils
-Version:        0.1.1
-Release:        1%{?dist}
+Version:        %{version}
+Release:        %{release}%{?dist}
 Summary:        Utility and udev rules to help identify Azure NVMe devices
 
 License:        MIT
 URL:            https://github.com/Azure/%{name}
-Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
+Source0:        %{name}-dev.tar.gz
 
 BuildRequires:  binutils
 BuildRequires:  cmake
@@ -17,6 +21,7 @@ BuildRequires:  kernel-headers
 Utility and udev rules to help identify Azure NVMe devices.
 
 %prep
+git archive --format=tar.gz --prefix=%{name}-%{version}/ HEAD --output %{_topdir}/SOURCES/%{name}-dev.tar.gz --remote %{sourcedir}/.git
 %autosetup
 
 %build
@@ -29,7 +34,3 @@ make install DESTDIR=%{buildroot}
 %files
 /usr/sbin/azure-nvme-id
 /lib/udev/rules.d/80-azure-nvme.rules
-
-%changelog
-* Mon Feb 26 2024 Chris Patterson <cpatterson@microsoft.com> - 0.1.1-1
-- Initial package
