@@ -72,3 +72,5 @@ _deps
 
 # Compiled artifacts
 azure-nvme-id
+build/
+udev/80-azure-nvme.rules
