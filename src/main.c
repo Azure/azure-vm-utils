@@ -404,7 +404,7 @@ int main(int argc, const char **argv)
         }
         if (strcmp(argv[i], "--version") == 0)
         {
-            printf("azure-nvme-id v%s\n", VERSION);
+            printf("azure-nvme-id %s\n", VERSION);
             return 0;
         }
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)

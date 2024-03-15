@@ -74,3 +74,4 @@ _deps
 azure-nvme-id
 build/
 udev/80-azure-nvme.rules
+src/version.h
