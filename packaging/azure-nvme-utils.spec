@@ -20,7 +20,7 @@ Utility and udev rules to help identify Azure NVMe devices.
 %autosetup
 
 %build
-%cmake .
+%cmake -DVERSION="%{version}-%{release}" .
 make %{?_smp_mflags}
 
 %install

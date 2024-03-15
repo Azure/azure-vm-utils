@@ -19,6 +19,21 @@ configure_file(
   @ONLY
 )
 
+if(NOT DEFINED VERSION)
+    execute_process(
+        COMMAND git describe --tags --always --dirty
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+endif()
+
+configure_file(
+    "${CMAKE_SOURCE_DIR}/src/version.h.in"
+    "${CMAKE_SOURCE_DIR}/src/version.h"
+    @ONLY
+)
+
 install(TARGETS azure-nvme-id DESTINATION ${AZURE_NVME_ID_INSTALL_DIR})
 install(FILES udev/80-azure-nvme.rules DESTINATION ${UDEV_RULES_INSTALL_DIR})
 
