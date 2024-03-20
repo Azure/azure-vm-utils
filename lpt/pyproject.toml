@@ -14,7 +14,7 @@ paramiko = "^3.4.0"
 
 [tool.poetry.dev-dependencies]
 isort = "^5.10.1"
-black = "^22.10.0"
+black = "^24.3.0"
 pylint = "^2.15.5"
 mypy = "^0.982"
 flake8 = "^5.0.4"
