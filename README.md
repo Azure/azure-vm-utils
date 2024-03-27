@@ -29,6 +29,26 @@ To run in udev mode:
 DEVNAME=/dev/nvme0n1 azure-nvme-id --udev
 ```
 
+### Enabling LUN Calculation by Namespace Identifier (Default)
+
+The "LUN" configured by the user for data disks can be computed by the namespace identifier for "MSFT NVMe Accelerator v1.0" controllers.
+
+This is currently enabled by default to support cases where there is no identification information available in the vendor-specific field of Identify Namespace data structure.
+
+It can be explicitly enabled by passing AZURE_LUN_CALCULATION_BY_NSID_ENABLED=1 to cmake:
+
+```
+cmake -DAZURE_LUN_CALCULATION_BY_NSID_ENABLED=1 .
+```
+
+## Disabling LUN Calculation by Namespace Identifier
+
+Pass AZURE_LUN_CALCULATION_BY_NSID_ENABLED=0 to cmake:
+
+```
+cmake -DAZURE_LUN_CALCULATION_BY_NSID_ENABLED=0 .
+```
+
 ## Contributing
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
