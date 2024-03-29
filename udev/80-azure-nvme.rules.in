@@ -14,10 +14,10 @@ ATTR{nsid}=="?*", ENV{AZURE_NVME_TYPE}="local"
 GOTO="azure_nvme_start"
 
 LABEL="azure_nvme_remote_start"
-# !! USE AT YOUR OWN RISK: To use OS/data lun mappings based on nsid for Linux VMs, uncomment the following lines:
-#ATTR{nsid}=="1", ENV{AZURE_NVME_TYPE}="os", GOTO="azure_nvme_start"
-#ATTR{nsid}=="?*", ENV{AZURE_NVME_TYPE}="data"
-#ENV{AZURE_NVME_TYPE}=="data", ATTR{nsid}=="?*", PROGRAM="/bin/sh -ec 'echo $$((%s{nsid}-2))'", ENV{AZURE_NVME_LUN}="$result"
+ATTR{nsid}=="?*", ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}="@AZURE_LUN_CALCULATION_BY_NSID_ENABLED@"
+ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}=="1", ATTR{nsid}=="1", ENV{AZURE_NVME_TYPE}="os", GOTO="azure_nvme_start"
+ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}=="1", ATTR{nsid}=="?*", ENV{AZURE_NVME_TYPE}="data"
+ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}=="1", ENV{AZURE_NVME_TYPE}=="data", ATTR{nsid}=="?*", PROGRAM="/bin/sh -ec 'echo $$((%s{nsid}-2))'", ENV{AZURE_NVME_LUN}="$result"
 GOTO="azure_nvme_start"
 
 LABEL="azure_nvme_start"
