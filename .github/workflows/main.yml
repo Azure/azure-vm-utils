@@ -1,0 +1,39 @@
+name: Main CI
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, ubuntu-22.04]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.sha }}
+        fetch-depth: 0
+        fetch-tags: true
+    - name: Get tags from upstream, if needed
+      if: github.repository != 'Azure/azure-nvme-utils'
+      run: |
+        git remote add upstream https://github.com/Azure/azure-nvme-utils.git
+        git fetch upstream --tags
+    - name: Setup
+      run: |
+        sudo apt update
+        sudo apt install gcc pandoc cmake -y
+    - name: Build & install project with cmake
+      run: |
+        cmake .
+        make
+        sudo make install
+    - name: Verify installation
+      run: |
+        test -f /usr/local/sbin/azure-nvme-id
+        test -f /lib/udev/rules.d/80-azure-nvme.rules
+        azure-nvme-id --version
