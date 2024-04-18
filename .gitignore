@@ -75,3 +75,4 @@ azure-nvme-id
 build/
 udev/80-azure-nvme.rules
 src/version.h
+doc/azure-nvme-id.1
