@@ -22,3 +22,7 @@ add_custom_target(
         doc ALL
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/doc/azure-nvme-id.1
 )
+
+set(MANPAGES_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/share/man")
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/doc/azure-nvme-id.1
+        DESTINATION ${MANPAGES_INSTALL_DIR}/man1)
