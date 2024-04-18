@@ -1,8 +1,18 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(azure-nvme-utils VERSION 0.1.0 LANGUAGES C)
 
+if(NOT DEFINED VERSION)
+    execute_process(
+        COMMAND git describe --tags --always --dirty
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+endif()
+
 include(cmake/cppcheck.cmake)
 include(cmake/clangformat.cmake)
+include(cmake/doc.cmake)
 
 include(CTest)
 enable_testing()
@@ -25,15 +35,6 @@ configure_file(
   "${PROJECT_BINARY_DIR}/udev/80-azure-nvme.rules"
   @ONLY
 )
-
-if(NOT DEFINED VERSION)
-    execute_process(
-        COMMAND git describe --tags --always --dirty
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        OUTPUT_VARIABLE VERSION
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-endif()
 
 configure_file(
     "${CMAKE_SOURCE_DIR}/src/version.h.in"
