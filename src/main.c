@@ -5,6 +5,7 @@
 
 #include <ctype.h>
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/nvme_ioctl.h>
@@ -23,6 +24,7 @@
 
 #define MAX_PATH 4096
 #define MICROSOFT_NVME_VENDOR_ID 0x1414
+#define SYS_CLASS_NVME_PATH "/sys/class/nvme"
 
 struct nvme_controller
 {
@@ -87,14 +89,14 @@ char *read_file_as_string(const char *path)
     FILE *file = fopen(path, "r");
     if (file == NULL)
     {
-        perror("fopen");
+        fprintf(stderr, "failed to fopen %s: %m\n", path);
         return NULL;
     }
 
     // Determine the file size
     if (fseek(file, 0, SEEK_END) < 0)
     {
-        perror("fseek");
+        fprintf(stderr, "failed to fseek on %s: %m\n", path);
         fclose(file);
         return NULL;
     }
@@ -102,14 +104,14 @@ char *read_file_as_string(const char *path)
     long length = ftell(file);
     if (length < 0)
     {
-        perror("ftell");
+        fprintf(stderr, "failed to ftell on %s: %m\n", path);
         fclose(file);
         return NULL;
     }
 
     if (fseek(file, 0, SEEK_SET) < 0)
     {
-        perror("fseek");
+        fprintf(stderr, "failed to fseek on %s: %m\n", path);
         fclose(file);
         return NULL;
     }
@@ -118,7 +120,7 @@ char *read_file_as_string(const char *path)
     char *contents = malloc(length + 1);
     if (contents == NULL)
     {
-        perror("malloc");
+        fprintf(stderr, "failed to malloc for %s: %m\n", path);
         fclose(file);
         return NULL;
     }
@@ -145,7 +147,7 @@ char *read_file_as_string(const char *path)
 int is_microsoft_nvme_device(const char *device_name)
 {
     char vendor_id_path[MAX_PATH];
-    snprintf(vendor_id_path, sizeof(vendor_id_path), "/sys/class/nvme/%s/device/vendor", device_name);
+    snprintf(vendor_id_path, sizeof(vendor_id_path), "%s/%s/device/vendor", SYS_CLASS_NVME_PATH, device_name);
 
     char *vendor_id_string = read_file_as_string(vendor_id_path);
     if (vendor_id_string == NULL)
@@ -181,7 +183,7 @@ char *query_namespace_vs(const char *namespace_path)
     int fd = open(namespace_path, O_RDONLY);
     if (fd < 0)
     {
-        perror("open");
+        fprintf(stderr, "failed to open %s: %m\n", namespace_path);
         return NULL;
     }
 
@@ -190,7 +192,7 @@ char *query_namespace_vs(const char *namespace_path)
     struct nvme_id_ns *ns = NULL;
     if (posix_memalign((void **)&ns, sysconf(_SC_PAGESIZE), sizeof(struct nvme_id_ns)) != 0)
     {
-        perror("posix_memalign");
+        fprintf(stderr, "failed posix_memalign for %s: %m\n", namespace_path);
         close(fd);
         return NULL;
     }
@@ -204,7 +206,7 @@ char *query_namespace_vs(const char *namespace_path)
 
     if (ioctl(fd, NVME_IOCTL_ADMIN_CMD, &cmd) < 0)
     {
-        perror("ioctl");
+        fprintf(stderr, "failed NVME_IOCTL_ADMIN_CMD ioctl for %s: %m\n", namespace_path);
         free(ns);
         close(fd);
         return NULL;
@@ -240,7 +242,7 @@ int enumerate_namespaces_for_controller(struct nvme_controller *ctrl)
     int n = scandir(ctrl->sys_path, &namelist, is_nvme_namespace, alphasort);
     if (n < 0)
     {
-        perror("scandir");
+        fprintf(stderr, "failed scandir for %s: %m\n", ctrl->sys_path);
         return 1;
     }
 
@@ -251,9 +253,10 @@ int enumerate_namespaces_for_controller(struct nvme_controller *ctrl)
         snprintf(namespace_path, sizeof(namespace_path), "/dev/%s", namelist[i]->d_name);
 
         char *vs = query_namespace_vs(namespace_path);
-        printf("%s: %s\n", namespace_path, vs);
-        free(vs);
-
+        if (vs != NULL) {
+            printf("%s: %s\n", namespace_path, vs);
+            free(vs);
+        }
         free(namelist[i]);
     }
 
@@ -285,10 +288,10 @@ int enumerate_azure_nvme_controllers()
 {
     struct dirent **namelist;
 
-    int n = scandir("/sys/class/nvme", &namelist, is_azure_nvme_controller, alphasort);
+    int n = scandir(SYS_CLASS_NVME_PATH, &namelist, is_azure_nvme_controller, alphasort);
     if (n < 0)
     {
-        perror("scandir");
+        fprintf(stderr, "no NVMe devices found in %s\n", SYS_CLASS_NVME_PATH);
         return 1;
     }
 
@@ -299,7 +302,7 @@ int enumerate_azure_nvme_controllers()
 
         strncpy(ctrl.name, namelist[i]->d_name, sizeof(ctrl.name));
         snprintf(ctrl.dev_path, sizeof(ctrl.dev_path), "/dev/%s", ctrl.name);
-        snprintf(ctrl.sys_path, sizeof(ctrl.sys_path), "/sys/class/nvme/%s", ctrl.name);
+        snprintf(ctrl.sys_path, sizeof(ctrl.sys_path), "%s/%s", SYS_CLASS_NVME_PATH, ctrl.name);
 
         enumerate_namespaces_for_controller(&ctrl);
         free(namelist[i]);
