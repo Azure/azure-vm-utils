@@ -11,7 +11,7 @@ cmake .
 make
 ```
 
-To install /usr/local/bin/azure-nvme-id and /lib/udev/rules.d/80-azure-nvme.rules:
+To install /usr/local/bin/azure-nvme-id and /usr/local/lib/udev/rules.d/80-azure-nvme.rules:
 
 ```
 sudo make install
