@@ -1,7 +1,7 @@
 ACTION!="add|change", GOTO="azure_nvme_end"
 SUBSYSTEM!="block", GOTO="azure_nvme_end"
 KERNEL!="nvme*", GOTO="azure_nvme_end"
-ENV{ID_NSID}!="?*", GOTO="azure_nvme_end"
+ATTRS{nsid}!="?*", GOTO="azure_nvme_end"
 
 ENV{ID_MODEL}=="Microsoft NVMe Direct Disk", GOTO="azure_nvme_direct_v1_start"
 ENV{ID_MODEL}=="Microsoft NVMe Direct Disk v2", GOTO="azure_nvme_direct_v2_start"
@@ -10,18 +10,18 @@ GOTO="azure_nvme_end"
 
 LABEL="azure_nvme_direct_v1_start"
 LABEL="azure_nvme_direct_v2_start"
-ENV{ID_NSID}=="?*", ENV{AZURE_NVME_TYPE}="local"
+ATTRS{nsid}=="?*", ENV{AZURE_NVME_TYPE}="local"
 GOTO="azure_nvme_start"
 
 LABEL="azure_nvme_remote_start"
-ENV{ID_NSID}=="?*", ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}="@AZURE_LUN_CALCULATION_BY_NSID_ENABLED@"
-ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}=="1", ENV{ID_NSID}=="1", ENV{AZURE_NVME_TYPE}="os", GOTO="azure_nvme_start"
-ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}=="1", ENV{ID_NSID}=="?*", ENV{AZURE_NVME_TYPE}="data"
-ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}=="1", ENV{AZURE_NVME_TYPE}=="data", END{ID_NSID}=="?*", PROGRAM="/bin/sh -ec 'echo $$((%s{nsid}-2))'", ENV{AZURE_NVME_LUN}="$result"
+ATTRS{nsid}=="?*", ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}="@AZURE_LUN_CALCULATION_BY_NSID_ENABLED@"
+ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}=="1", ATTRS{nsid}=="1", ENV{AZURE_NVME_TYPE}="os", GOTO="azure_nvme_start"
+ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}=="1", ATTRS{nsid}=="?*", ENV{AZURE_NVME_TYPE}="data"
+ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}=="1", ENV{AZURE_NVME_TYPE}=="data", ATTRS{nsid}=="?*", PROGRAM="/bin/sh -ec 'echo $$((%s{nsid}-2))'", ENV{AZURE_NVME_LUN}="$result"
 GOTO="azure_nvme_start"
 
 LABEL="azure_nvme_start"
-ENV{ID_NSID}=="?*", IMPORT{program}="@AZURE_NVME_ID_INSTALL_DIR@/azure-nvme-id --udev"
+ATTRS{nsid}=="?*", IMPORT{program}="@AZURE_NVME_ID_INSTALL_DIR@/azure-nvme-id --udev"
 # systemd v254 ships an updated 60-persistent-storage.rules that would allow
 # these to be deduplicated using $env{.PART_SUFFIX}
 ENV{DEVTYPE}=="disk", ENV{AZURE_NVME_TYPE}=="os", SYMLINK+="disk/azure/os"
