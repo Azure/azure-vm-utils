@@ -1,11 +1,11 @@
 Name:           azure-nvme-utils
-Version:        0.1.1
-Release:        1%{?dist}
+Version:        %{__git_version}
+Release:        %{__git_release}%{?dist}
 Summary:        Utility and udev rules to help identify Azure NVMe devices
 
 License:        MIT
 URL:            https://github.com/Azure/%{name}
-Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
+Source0:        azure-nvme-utils_dev.tgz
 
 BuildRequires:  binutils
 BuildRequires:  cmake
@@ -20,16 +20,15 @@ Utility and udev rules to help identify Azure NVMe devices.
 %autosetup
 
 %build
-%cmake -DVERSION="%{version}-%{release}" .
-make %{?_smp_mflags}
+%cmake -DVERSION="%{version}-%{release}"
+%cmake_build
 
 %install
-make install DESTDIR=%{buildroot}
+%cmake_install
+
+%check
+%ctest
 
 %files
-/usr/sbin/azure-nvme-id
-/lib/udev/rules.d/80-azure-nvme.rules
-
-%changelog
-* Mon Feb 26 2024 Chris Patterson <cpatterson@microsoft.com> - 0.1.1-1
-- Initial package
+%{_libdir}/udev/rules.d/80-azure-nvme.rules
+%{_sbindir}/azure-nvme-id
