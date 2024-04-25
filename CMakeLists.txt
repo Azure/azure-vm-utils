@@ -21,7 +21,7 @@ add_compile_options(-Wextra -Wall -Werror -std=gnu11 -D_GNU_SOURCE=1)
 add_executable(azure-nvme-id src/main.c)
 
 set(AZURE_NVME_ID_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/sbin")
-set(UDEV_RULES_INSTALL_DIR "/lib/udev/rules.d")
+set(UDEV_RULES_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib/udev/rules.d")
 
 option(AZURE_LUN_CALCULATION_BY_NSID_ENABLED "Enable fallback \"LUN\" calculation via NSID" ON)
 if(AZURE_LUN_CALCULATION_BY_NSID_ENABLED)
