@@ -36,5 +36,5 @@ jobs:
       run: |
         test -f /usr/local/sbin/azure-nvme-id
         test -f /usr/local/share/man/man1/azure-nvme-id.1
-        test -f /usr/local/lib/udev/rules.d/80-azure-nvme.rules
+        test -f /lib/udev/rules.d/80-azure-nvme.rules
         azure-nvme-id --version

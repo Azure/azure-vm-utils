@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0.0)
+cmake_minimum_required(VERSION 3.4.0)
 project(azure-nvme-utils VERSION 0.1.0 LANGUAGES C)
 
 if(NOT DEFINED VERSION)
@@ -9,6 +9,8 @@ if(NOT DEFINED VERSION)
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 endif()
+
+find_package(PkgConfig)
 
 include(cmake/cppcheck.cmake)
 include(cmake/clangformat.cmake)
@@ -22,6 +24,13 @@ add_executable(azure-nvme-id src/main.c)
 
 set(AZURE_NVME_ID_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/sbin")
 set(UDEV_RULES_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib/udev/rules.d")
+
+if(PKG_CONFIG_FOUND)
+    pkg_get_variable(UDEV_DIR udev udevdir)
+    if(UDEV_DIR)
+        set(UDEV_RULES_INSTALL_DIR "${UDEV_DIR}/rules.d")
+    endif()
+endif()
 
 option(AZURE_LUN_CALCULATION_BY_NSID_ENABLED "Enable fallback \"LUN\" calculation via NSID" ON)
 if(AZURE_LUN_CALCULATION_BY_NSID_ENABLED)
