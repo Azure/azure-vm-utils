@@ -1,4 +1,4 @@
-name: Main CI
+name: Debian Packaging CI
 on: [push, pull_request]
 
 jobs:
@@ -27,15 +27,21 @@ jobs:
     - name: Setup
       run: |
         sudo apt update
-        sudo apt install gcc pandoc cmake -y
-    - name: Build & install project with cmake
+        sudo apt install gcc pandoc cmake devscripts debhelper -y
+    - name: Build debs
       run: |
-        cmake .
-        make
-        sudo make install
+        DEBEMAIL="Azure NVMe Utils CI <azure/azure-nvme-utils@github.com>" ./scripts/build-deb.sh
+    - name: Lintian check
+      run: |
+        lintian out/*.deb
+    - name: Install debs
+      run: |
+        sudo dpkg -i out/*.deb
     - name: Verify installation
       run: |
-        test -f /usr/local/sbin/azure-nvme-id
-        test -f /usr/local/share/man/man1/azure-nvme-id.1
-        test -f /usr/local/lib/udev/rules.d/80-azure-nvme.rules
+        set -x
+        dpkg -L azure-nvme-utils
+        test -f /usr/share/man/man1/azure-nvme-id.1.gz
+        test -f /usr/sbin/azure-nvme-id
+        test -f /lib/udev/rules.d/80-azure-nvme.rules
         azure-nvme-id --version

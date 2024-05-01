@@ -72,7 +72,10 @@ _deps
 
 # Compiled artifacts
 azure-nvme-id
-build/
-udev/80-azure-nvme.rules
-src/version.h
-doc/azure-nvme-id.1
+obj-*
+/build/
+/debian/
+/doc/azure-nvme-id.1
+/src/version.h
+/udev/80-azure-nvme.rules
+/out/

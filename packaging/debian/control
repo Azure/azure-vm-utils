@@ -1,0 +1,16 @@
+Source: azure-nvme-utils
+Section: utils
+Priority: optional
+Maintainer: Chris Patterson <cpatterson@microsoft.com>
+Build-Depends: cmake, pandoc, debhelper-compat (= 12)
+Standards-Version: 4.5.0
+Homepage: https://github.com/Azure/azure-nvme-utils
+Rules-Requires-Root: no
+
+Package: azure-nvme-utils
+Architecture: any
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: Utilities to assist managing NVMe devices on Azure
+ This package provides azure-nvme-id for NVMe device identification and udev
+ rules to provide symlinks using available identifiers.
