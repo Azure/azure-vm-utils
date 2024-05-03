@@ -17,7 +17,7 @@ include(cmake/doc.cmake)
 include(CTest)
 enable_testing()
 
-add_compile_options(-Wextra -Wall -Werror -std=gnu11 -D_GNU_SOURCE=1)
+add_compile_options(-Wextra -Wall $<$<CONFIG:Debug>:-Werror> -std=gnu11 -D_GNU_SOURCE=1)
 add_executable(azure-nvme-id src/main.c)
 
 set(AZURE_NVME_ID_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/sbin")
