@@ -26,7 +26,7 @@ azure-mgmt-compute = "^29.0.0"
 azure-mgmt-storage = "^20.1.0"
 azure-mgmt-resource = "^21.2.1"
 azure-mgmt-network = "^22.1.0"
-azure-identity = "^1.11.0"
+azure-identity = "^1.16.1"
 pytest = "^7.2.0"
 
 [tool.pylint."messages control"]
