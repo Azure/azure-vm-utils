@@ -75,7 +75,6 @@ azure-nvme-id
 obj-*
 /build/
 /debian/
-/doc/azure-nvme-id.1
 /src/version.h
 /udev/80-azure-nvme.rules
 /out/
