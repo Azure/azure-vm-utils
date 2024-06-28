@@ -29,6 +29,7 @@ Utility and udev rules to help identify Azure NVMe devices.
 %files
 %{_exec_prefix}/lib/udev/rules.d/80-azure-nvme.rules
 %{_sbindir}/azure-nvme-id
+%{_mandir}/man8/azure-nvme-id.8.gz
 
 %changelog
 %autochangelog
