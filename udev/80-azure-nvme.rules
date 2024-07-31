@@ -19,7 +19,7 @@ ATTRS{nsid}=="?*", ENV{AZURE_NVME_TYPE}="data", PROGRAM="/bin/sh -ec 'echo $$((%
 GOTO="azure_nvme_start"
 
 LABEL="azure_nvme_start"
-ATTRS{nsid}=="?*", IMPORT{program}="@AZURE_NVME_ID_INSTALL_DIR@/azure-nvme-id --udev"
+ATTRS{nsid}=="?*", IMPORT{program}="/usr/sbin/azure-nvme-id --udev"
 # systemd v254 ships an updated 60-persistent-storage.rules that would allow
 # these to be deduplicated using $env{.PART_SUFFIX}
 ENV{DEVTYPE}=="disk", ENV{AZURE_NVME_TYPE}=="os", SYMLINK+="disk/azure/os"
