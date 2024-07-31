@@ -41,6 +41,7 @@ jobs:
       run: |
         set -x
         dpkg -L azure-nvme-utils
+        test -f /usr/share/initramfs-tools/hooks/azure-disk
         test -f /usr/share/man/man8/azure-nvme-id.8.gz
         test -f /usr/sbin/azure-nvme-id
         test -f /lib/udev/rules.d/80-azure-disk.rules

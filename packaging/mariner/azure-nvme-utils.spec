@@ -30,6 +30,7 @@ Utility and udev rules to help identify Azure NVMe devices.
 %ctest
 
 %files
+%{_libdir}/dracut/modules.d/97azure-disk/module-setup.sh
 %{_libdir}/udev/rules.d/80-azure-disk.rules
 %{_sbindir}/azure-nvme-id
 %{_mandir}/man8/azure-nvme-id.8.gz
