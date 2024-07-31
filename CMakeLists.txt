@@ -24,19 +24,18 @@ set(AZURE_NVME_ID_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/sbin")
 set(UDEV_RULES_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib/udev/rules.d" CACHE PATH "udev rules.d installation directory")
 
 configure_file(
-  "${PROJECT_SOURCE_DIR}/udev/80-azure-nvme.rules.in"
-  "${PROJECT_BINARY_DIR}/udev/80-azure-nvme.rules"
-  @ONLY
-)
-
-configure_file(
     "${CMAKE_SOURCE_DIR}/src/version.h.in"
     "${CMAKE_SOURCE_DIR}/src/version.h"
     @ONLY
 )
 
 install(TARGETS azure-nvme-id DESTINATION ${AZURE_NVME_ID_INSTALL_DIR})
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/udev/80-azure-nvme.rules DESTINATION ${UDEV_RULES_INSTALL_DIR})
+
+# Install udev rules after updating "/usr/sbin/azure-nvme-id" with installed path $AZURE_NVME_ID_INSTALL_DIR.
+file(READ ${CMAKE_SOURCE_DIR}/udev/80-azure-nvme.rules CONTENT)
+string(REPLACE "/usr/sbin/azure-nvme-id" "${AZURE_NVME_ID_INSTALL_DIR}/azure-nvme-id" CONTENT "${CONTENT}")
+file(WRITE ${CMAKE_BINARY_DIR}/udev/80-azure-nvme.rules ${CONTENT})
+install(FILES ${CMAKE_BINARY_DIR}/udev/80-azure-nvme.rules DESTINATION ${UDEV_RULES_INSTALL_DIR})
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
