@@ -1,0 +1,29 @@
+#!/bin/sh
+
+PREREQ="udev"
+
+prereqs()
+{
+    echo "${PREREQ}"
+}
+
+case $1 in
+prereqs)
+    prereqs
+    exit 0
+    ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+DESTINATION="${DESTDIR}/lib/udev/rules.d/"
+RULES_FILE="/usr/lib/udev/rules.d/80-azure-disk.rules"
+
+if [ -e "${RULES_FILE}" ]; then
+    mkdir -p "${DESTINATION}"
+    cp -p "${RULES_FILE}" "${DESTINATION}"
+fi
+
+copy_exec "/usr/bin/cut" "${DESTDIR}/bin/"
+copy_exec "/usr/bin/readlink" "${DESTDIR}/bin/"
+copy_exec "/usr/sbin/azure-nvme-id" "${DESTDIR}/sbin/"
