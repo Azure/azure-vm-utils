@@ -23,13 +23,6 @@ add_executable(azure-nvme-id src/main.c)
 set(AZURE_NVME_ID_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/sbin")
 set(UDEV_RULES_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib/udev/rules.d" CACHE PATH "udev rules.d installation directory")
 
-option(AZURE_LUN_CALCULATION_BY_NSID_ENABLED "Enable fallback \"LUN\" calculation via NSID" ON)
-if(AZURE_LUN_CALCULATION_BY_NSID_ENABLED)
-    set(AZURE_LUN_CALCULATION_BY_NSID_ENABLED 1)
-else()
-    set(AZURE_LUN_CALCULATION_BY_NSID_ENABLED 0)
-endif()
-
 configure_file(
   "${PROJECT_SOURCE_DIR}/udev/80-azure-nvme.rules.in"
   "${PROJECT_BINARY_DIR}/udev/80-azure-nvme.rules"
