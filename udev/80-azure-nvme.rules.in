@@ -14,10 +14,8 @@ ATTRS{nsid}=="?*", ENV{AZURE_NVME_TYPE}="local"
 GOTO="azure_nvme_start"
 
 LABEL="azure_nvme_remote_start"
-ATTRS{nsid}=="?*", ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}="@AZURE_LUN_CALCULATION_BY_NSID_ENABLED@"
-ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}=="1", ATTRS{nsid}=="1", ENV{AZURE_NVME_TYPE}="os", GOTO="azure_nvme_start"
-ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}=="1", ATTRS{nsid}=="?*", ENV{AZURE_NVME_TYPE}="data"
-ENV{AZURE_LUN_CALCULATION_BY_NSID_ENABLED}=="1", ENV{AZURE_NVME_TYPE}=="data", ATTRS{nsid}=="?*", PROGRAM="/bin/sh -ec 'echo $$((%s{nsid}-2))'", ENV{AZURE_NVME_LUN}="$result"
+ATTRS{nsid}=="1", ENV{AZURE_NVME_TYPE}="os", GOTO="azure_nvme_start"
+ATTRS{nsid}=="?*", ENV{AZURE_NVME_TYPE}="data", PROGRAM="/bin/sh -ec 'echo $$((%s{nsid}-2))'", ENV{AZURE_NVME_LUN}="$result"
 GOTO="azure_nvme_start"
 
 LABEL="azure_nvme_start"
