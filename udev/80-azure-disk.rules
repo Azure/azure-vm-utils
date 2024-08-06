@@ -28,8 +28,8 @@ ATTRS{nsid}=="?*", ENV{AZURE_DISK_TYPE}="local", ENV{AZURE_DISK_SERIAL}="$env{ID
 GOTO="azure_disk_nvme_id"
 
 LABEL="azure_disk_nvme_remote_v1"
-ATTRS{nsid}=="1", ENV{AZURE_NVME_TYPE}="os", GOTO="azure_nvme_start"
-ATTRS{nsid}=="?*", ENV{AZURE_NVME_TYPE}="data", PROGRAM="/bin/sh -ec 'echo $$((%s{nsid}-2))'", ENV{AZURE_NVME_LUN}="$result"
+ATTRS{nsid}=="1", ENV{AZURE_DISK_TYPE}="os", GOTO="azure_disk_nvme_id"
+ATTRS{nsid}=="?*", ENV{AZURE_DISK_TYPE}="data", PROGRAM="/bin/sh -ec 'echo $$((%s{nsid}-2))'", ENV{AZURE_DISK_LUN}="$result"
 
 LABEL="azure_disk_nvme_id"
 ATTRS{nsid}=="?*", IMPORT{program}="/usr/sbin/azure-nvme-id --udev"
