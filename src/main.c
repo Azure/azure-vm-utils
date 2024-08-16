@@ -317,7 +317,7 @@ int enumerate_azure_nvme_controllers()
  */
 void print_udev_key_value(const char *key, const char *value)
 {
-    printf("AZURE_NVME_");
+    printf("AZURE_DISK_");
     while (*key)
     {
         putchar(toupper((unsigned char)*key));
@@ -333,9 +333,9 @@ void print_udev_key_value(const char *key, const char *value)
  *     type=local,index=2,name=nvme-600G-2
  *
  * Environment variables printed include:
- *     AZURE_NVME_TYPE=local
- *     AZURE_NVME_INDEX=2
- *     AZURE_NVME_NAME=nvme-600G-2
+ *     AZURE_DISK_TYPE=local
+ *     AZURE_DISK_INDEX=2
+ *     AZURE_DISK_NAME=nvme-600G-2
  */
 int parse_vs_for_udev_import(char *vs)
 {
@@ -367,10 +367,10 @@ int parse_vs_for_udev_import(char *vs)
 /**
  * Execute udev mode, printing out environment variables for import.
  *
- * AZURE_NVME_VS: <vendor specific data>
- * AZURE_NVME_TYPE: <type, if specified>
- * AZURE_NVME_INDEX: <index for data disk, if specified>
- * AZURE_NVME_NAME: <name for disk, if specified>
+ * AZURE_DISK_VS: <vendor specific data>
+ * AZURE_DISK_TYPE: <type, if specified>
+ * AZURE_DISK_INDEX: <index for data disk, if specified>
+ * AZURE_DISK_NAME: <name for disk, if specified>
  * etc...
  */
 int execute_udev_import(void)
@@ -389,7 +389,7 @@ int execute_udev_import(void)
         return 1;
     }
 
-    printf("AZURE_NVME_VS=%s\n", vs);
+    printf("AZURE_DISK_VS=%s\n", vs);
     parse_vs_for_udev_import(vs);
     free(vs);
 

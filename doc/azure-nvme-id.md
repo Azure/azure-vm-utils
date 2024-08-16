@@ -48,10 +48,10 @@ Parse device identifiers for udev consumption:
 
 ```bash
 $ sudo env DEVNAME=/dev/nvme1n1 azure-nvme-id --udev
-AZURE_NVME_VS=type=local,index=1,name=nvme-110G-1
-AZURE_NVME_TYPE=local
-AZURE_NVME_INDEX=1
-AZURE_NVME_NAME=nvme-110G-1
+AZURE_DISK_VS=type=local,index=1,name=nvme-110G-1
+AZURE_DISK_TYPE=local
+AZURE_DISK_INDEX=1
+AZURE_DISK_NAME=nvme-110G-1
 ```
 
 Check `azure-nvme-id` version:
