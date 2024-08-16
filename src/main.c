@@ -291,8 +291,8 @@ int enumerate_azure_nvme_controllers()
     int n = scandir(SYS_CLASS_NVME_PATH, &namelist, is_azure_nvme_controller, alphasort);
     if (n < 0)
     {
-        fprintf(stderr, "no NVMe devices found in %s\n", SYS_CLASS_NVME_PATH);
-        return 1;
+        fprintf(stderr, "no NVMe devices in %s: %m\n", SYS_CLASS_NVME_PATH);
+        return 0;
     }
 
     DEBUG_PRINTF("found %d controllers\n", n);
