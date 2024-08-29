@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.0)
-project(azure-nvme-utils VERSION 0.1.0 LANGUAGES C)
+project(azure-vm-utils VERSION 0.1.0 LANGUAGES C)
 
 if(NOT DEFINED VERSION)
     execute_process(

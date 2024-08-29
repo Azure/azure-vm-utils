@@ -63,4 +63,4 @@ azure-nvme-id 0.1.2
 
 # SEE ALSO
 
-Source and documentation available at: <https://github.com/Azure/azure-nvme-utils>
+Source and documentation available at: <https://github.com/Azure/azure-vm-utils>

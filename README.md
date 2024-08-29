@@ -1,6 +1,6 @@
-# Project
+# azure-vm-utils
 
-This project includes a utility to help identify Azure NVMe devices.
+A collection of utilities and udev rules to make the most of the Linux experience on Azure.
 
 ## Quick Start
 
@@ -11,11 +11,17 @@ cmake .
 make
 ```
 
-To install /usr/local/bin/azure-nvme-id and /usr/local/lib/udev/rules.d/80-azure-disk.rules:
+To install:
 
 ```
 sudo make install
 ```
+
+# Executables
+
+## azure-nvme-id
+
+`azure-nvme-id` is a utility to help identify Azure NVMe devices.
 
 To run:
 
@@ -29,7 +35,13 @@ To run in udev mode:
 DEVNAME=/dev/nvme0n1 azure-nvme-id --udev
 ```
 
-## Contributing
+# Rules for udev
+
+## 80-azure-disk.rules
+
+Provides helpful symlinks in /dev/disk/azure for local, data, and os disks.
+
+# Contributing
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
 Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us

@@ -1,7 +1,7 @@
-Name:           azure-nvme-utils
+Name:           azure-vm-utils
 Version:        %{__git_version}
 Release:        %{__git_release}%{?dist}
-Summary:        Utility and udev rules to help identify Azure NVMe devices
+Summary:        Utilities and udev rules for Linux on Azure
 
 License:        MIT
 URL:            https://github.com/Azure/%{name}
@@ -11,7 +11,8 @@ BuildRequires:  cmake
 BuildRequires:  gcc
 
 %description
-Utility and udev rules to help identify Azure NVMe devices.
+A collection of utilities and udev rules to make the most of the Linux
+experience on Azure.
 
 %prep
 %autosetup

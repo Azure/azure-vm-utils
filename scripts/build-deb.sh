@@ -21,10 +21,10 @@ if [[ -z ${DEBEMAIL:-} ]]; then
     git_email="$(git config user.email)"
     export DEBEMAIL="${git_user} <${git_email}>"
 fi
-dch --create -v "${deb_version}" --package "azure-nvme-utils" "development build: ${git_version}"
+dch --create -v "${deb_version}" --package "azure-vm-utils" "development build: ${git_version}"
 
 debuild --no-tgz-check
 
 mkdir -p "${output_dir}"
 rm -f "${output_dir}"/*.deb
-mv ../azure-nvme-utils*"${deb_version}"* "${output_dir}"/
+mv ../azure-vm-utils*"${deb_version}"* "${output_dir}"/

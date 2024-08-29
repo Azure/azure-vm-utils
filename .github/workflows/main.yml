@@ -20,9 +20,9 @@ jobs:
         fetch-depth: 0
         fetch-tags: true
     - name: Get tags from upstream, if needed
-      if: github.repository != 'Azure/azure-nvme-utils'
+      if: github.repository != 'Azure/azure-vm-utils'
       run: |
-        git remote add upstream https://github.com/Azure/azure-nvme-utils.git
+        git remote add upstream https://github.com/Azure/azure-vm-utils.git
         git fetch upstream --tags
     - name: Setup
       run: |
