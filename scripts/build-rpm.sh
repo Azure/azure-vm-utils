@@ -21,20 +21,20 @@ build_dir="$(mktemp -d)"
 mkdir -p "${build_dir}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
 # Create source tarball.
-output_source="${build_dir}/SOURCES/azure-nvme-utils_dev.tgz"
+output_source="${build_dir}/SOURCES/azure-vm-utils_dev.tgz"
 cd "$project_dir"
-git archive --verbose --format=tar.gz --prefix="azure-nvme-utils-${version}/" HEAD --output "${output_source}"
+git archive --verbose --format=tar.gz --prefix="azure-vm-utils-${version}/" HEAD --output "${output_source}"
 
 # Create spec file from template.
 cd "${project_dir}/packaging/${distro}"
 
 # Install dependencies.
-sudo dnf builddep -y --spec azure-nvme-utils.spec
+sudo dnf builddep -y --spec azure-vm-utils.spec
 
 # Build RPM.
-rpmbuild -ba --define "__git_version ${version}" --define "__git_release ${release}" --define "_topdir ${build_dir}" azure-nvme-utils.spec
+rpmbuild -ba --define "__git_version ${version}" --define "__git_release ${release}" --define "_topdir ${build_dir}" azure-vm-utils.spec
 
 # Copy RPM to output directory.
 mkdir -p "${output_dir}"
 rm -f "${output_dir}"/*.rpm
-cp -v "${build_dir}"/RPMS/*/"azure-nvme-utils-${version}-${release}".*.rpm "${output_dir}"
+cp -v "${build_dir}"/RPMS/*/"azure-vm-utils-${version}-${release}".*.rpm "${output_dir}"
