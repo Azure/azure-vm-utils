@@ -1,4 +1,4 @@
-.TH "azure\-nvme\-id" "1" "@TODAY@" "azure-nvme-id\ @VERSION@" "User Manual"
+.TH "azure\-nvme\-id" "8" "@TODAY@" "azure-nvme-id\ @VERSION@" "User Manual"
 .SH NAME
 azure\-nvme\-id \- Identify Azure NVMe devices.
 .SH SYNOPSIS

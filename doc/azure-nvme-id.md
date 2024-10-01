@@ -1,6 +1,6 @@
 ---
 title: azure-nvme-id
-section: 1
+section: 8
 header: User Manual
 footer: azure-nvme-id __VERSION__
 date: __DATE__
