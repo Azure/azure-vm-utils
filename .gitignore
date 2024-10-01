@@ -71,6 +71,5 @@ _deps
 azure-nvme-id
 obj-*
 /build/
-/debian/
 /src/version.h
 /out/
