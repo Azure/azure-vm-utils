@@ -22,13 +22,11 @@ if(GENERATE_MANPAGES)
     )
 else()
     configure_file(
-        "${CMAKE_SOURCE_DIR}/doc/azure-nvme-id.8"
+        "${CMAKE_SOURCE_DIR}/doc/azure-nvme-id.8.in"
         "${CMAKE_CURRENT_BINARY_DIR}/doc/azure-nvme-id.8"
         @ONLY
     )
 endif()
-
-
 
 add_custom_target(
         doc ALL
