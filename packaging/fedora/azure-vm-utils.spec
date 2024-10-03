@@ -28,8 +28,9 @@ experience on Azure.
 %ctest
 
 %files
-%{_exec_prefix}/lib/dracut/modules.d/97azure-disk/module-setup.sh
-%{_exec_prefix}/lib/udev/rules.d/80-azure-disk.rules
+%{_exec_prefix}/lib/dracut/*
+%{_exec_prefix}/lib/systemd/*
+%{_exec_prefix}/lib/udev/*
 %{_sbindir}/azure-nvme-id
 %{_mandir}/man8/azure-nvme-id.8.gz
 
