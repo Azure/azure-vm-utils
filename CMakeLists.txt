@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0.0)
+cmake_minimum_required(VERSION 3.5)
 project(azure-vm-utils VERSION 0.1.0 LANGUAGES C)
 
 if(NOT DEFINED VERSION)
