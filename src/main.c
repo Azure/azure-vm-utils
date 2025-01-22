@@ -19,6 +19,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "debug.h"
 #include "nvme.h"
 #include "version.h"
 
@@ -34,17 +35,7 @@ struct nvme_controller
     char model[MAX_PATH];
 };
 
-static bool debug = false;
 static bool udev_mode = false;
-
-#define DEBUG_PRINTF(fmt, ...)                                                                                         \
-    do                                                                                                                 \
-    {                                                                                                                  \
-        if (debug == true)                                                                                             \
-        {                                                                                                              \
-            fprintf(stderr, "DEBUG: " fmt, ##__VA_ARGS__);                                                             \
-        }                                                                                                              \
-    } while (0)
 
 /**
  * Given the path to a namespace, determine the namespace id.
@@ -59,21 +50,6 @@ int get_namespace_id_for_path(const char *namespace_path)
     }
 
     return nsid;
-}
-
-/**
- * Dump environment variables.
- */
-void debug_environment_variables()
-{
-    int i = 0;
-
-    DEBUG_PRINTF("Environment Variables:\n");
-    while (environ[i])
-    {
-        DEBUG_PRINTF("%s\n", environ[i]);
-        i++;
-    }
 }
 
 /**
@@ -180,42 +156,16 @@ char *query_namespace_vs(const char *namespace_path)
         return NULL;
     }
 
-    int fd = open(namespace_path, O_RDONLY);
-    if (fd < 0)
+    DEBUG_PRINTF("identifying namespace id=%d for device=%s...\n", nsid, namespace_path);
+    struct nvme_id_ns *ns = nvme_identify_namespace(namespace_path, nsid);
+    if (ns == NULL)
     {
-        fprintf(stderr, "failed to open %s: %m\n", namespace_path);
-        return NULL;
-    }
-
-    DEBUG_PRINTF("Opened device: %s with namespace id: %d...\n", namespace_path, nsid);
-
-    struct nvme_id_ns *ns = NULL;
-    if (posix_memalign((void **)&ns, sysconf(_SC_PAGESIZE), sizeof(struct nvme_id_ns)) != 0)
-    {
-        fprintf(stderr, "failed posix_memalign for %s: %m\n", namespace_path);
-        close(fd);
-        return NULL;
-    }
-
-    struct nvme_admin_cmd cmd = {
-        .opcode = 0x06, // Identify command
-        .nsid = nsid,
-        .addr = (unsigned long)ns,
-        .data_len = sizeof(ns),
-    };
-
-    if (ioctl(fd, NVME_IOCTL_ADMIN_CMD, &cmd) < 0)
-    {
-        fprintf(stderr, "failed NVME_IOCTL_ADMIN_CMD ioctl for %s: %m\n", namespace_path);
-        free(ns);
-        close(fd);
+        fprintf(stderr, "failed to identify namespace for device=%s\n", namespace_path);
         return NULL;
     }
 
     char *vs = strndup((const char *)ns->vs, sizeof(ns->vs));
-
     free(ns);
-    close(fd);
 
     return vs;
 }

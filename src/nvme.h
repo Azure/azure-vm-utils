@@ -3,6 +3,9 @@
  * Licensed under the MIT License. See LICENSE in the project root for license information.
  */
 
+#ifndef __NVME_H__
+#define __NVME_H__
+
 #include <linux/types.h>
 
 struct nvme_lbaf
@@ -52,3 +55,7 @@ struct nvme_id_ns
     __u8 rsvd192[192];
     __u8 vs[3712];
 };
+
+struct nvme_id_ns *nvme_identify_namespace(const char *device_path, int nsid);
+
+#endif // __NVME_H__

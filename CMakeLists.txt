@@ -18,7 +18,7 @@ include(CTest)
 enable_testing()
 
 add_compile_options(-Wextra -Wall $<$<CONFIG:Debug>:-Werror> -std=gnu11 -D_GNU_SOURCE=1)
-add_executable(azure-nvme-id src/main.c)
+add_executable(azure-nvme-id src/debug.c src/main.c src/nvme.c)
 
 set(AZURE_NVME_ID_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/sbin")
 set(DRACUT_MODULES_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib/dracut/modules.d/97azure-disk" CACHE PATH "dracut modules installation directory")
@@ -59,3 +59,8 @@ endif()
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
 include(CPack)
+
+option(ENABLE_TESTS "Enable unit tests" OFF)
+if(ENABLE_TESTS)
+    include(cmake/tests.cmake)
+endif()
