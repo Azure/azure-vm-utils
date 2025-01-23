@@ -5,6 +5,7 @@ pkg_check_modules(CRITERION REQUIRED criterion)
 set(TEST_SOURCE_FILES
     src/debug.c
     src/nvme.c
+    tests/debug_tests.c
     tests/mock_syscalls.c
     tests/nvme_tests.c
 )
