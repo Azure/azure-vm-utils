@@ -201,7 +201,7 @@ char *query_namespace_vs(const char *namespace_path)
         .opcode = 0x06, // Identify command
         .nsid = nsid,
         .addr = (unsigned long)ns,
-        .data_len = sizeof(ns),
+        .data_len = sizeof(struct nvme_id_ns),
     };
 
     if (ioctl(fd, NVME_IOCTL_ADMIN_CMD, &cmd) < 0)
