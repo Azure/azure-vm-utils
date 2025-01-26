@@ -20,7 +20,7 @@ enable_testing()
 add_compile_options(-Wextra -Wall $<$<CONFIG:Debug>:-Werror> -std=gnu11 -D_GNU_SOURCE=1)
 add_executable(azure-nvme-id src/main.c)
 
-set(AZURE_NVME_ID_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/sbin")
+set(AZURE_NVME_ID_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/sbin" CACHE PATH "azure-nvme-id installation directory")
 set(DRACUT_MODULES_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib/dracut/modules.d/97azure-disk" CACHE PATH "dracut modules installation directory")
 set(INITRAMFS_HOOKS_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/share/initramfs-tools/hooks" CACHE PATH "initramfs-tools hooks installation directory")
 set(UDEV_RULES_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib/udev/rules.d" CACHE PATH "udev rules.d installation directory")
