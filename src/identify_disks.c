@@ -111,7 +111,7 @@ int identify_disks(void)
     {
         struct nvme_controller ctrl;
 
-        strncpy(ctrl.name, namelist[i]->d_name, sizeof(ctrl.name));
+        snprintf(ctrl.name, sizeof(ctrl.name), "%s", namelist[i]->d_name);
         snprintf(ctrl.dev_path, sizeof(ctrl.dev_path), "/dev/%s", ctrl.name);
         snprintf(ctrl.sys_path, sizeof(ctrl.sys_path), "%s/%s", SYS_CLASS_NVME_PATH, ctrl.name);
 
