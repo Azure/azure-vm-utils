@@ -30,7 +30,7 @@ add_test_executable(debug_tests
 
 add_test_executable(identify_disks_tests
     WRAPPED_FUNCTIONS nvme_identify_namespace_vs_for_namespace_device
-    SOURCES src/debug.c src/identify_disks.c src/nvme.c src/util.c tests/identify_disks_tests.c
+    SOURCES src/debug.c src/identify_disks.c src/nvme.c tests/identify_disks_tests.c
     CFLAGS -DUNIT_TESTING_SYS_CLASS_NVME=1
 )
 
@@ -42,9 +42,4 @@ add_test_executable(identify_udev_tests
 add_test_executable(nvme_tests
     WRAPPED_FUNCTIONS open posix_memalign ioctl close
     SOURCES src/nvme.c tests/nvme_tests.c
-)
-
-add_test_executable(util_tests
-    WRAPPED_FUNCTIONS fopen fseek ftell fread fclose malloc
-    SOURCES src/util.c tests/util_tests.c
 )

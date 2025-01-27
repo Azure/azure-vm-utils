@@ -9,7 +9,6 @@
 #include "debug.h"
 #include "identify_disks.h"
 #include "identify_udev.h"
-#include "util.h"
 #include "version.h"
 
 int main(int argc, const char **argv)

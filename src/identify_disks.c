@@ -8,7 +8,6 @@
 #include "debug.h"
 #include "identify_disks.h"
 #include "nvme.h"
-#include "util.h"
 
 /**
  * Callback for scandir() to filter for NVMe namespaces.
@@ -63,14 +62,20 @@ int is_microsoft_nvme_device(const char *device_name)
     char vendor_id_path[MAX_PATH];
     snprintf(vendor_id_path, sizeof(vendor_id_path), "%s/%s/device/vendor", SYS_CLASS_NVME_PATH, device_name);
 
-    char *vendor_id_string = read_file_as_string(vendor_id_path);
-    if (vendor_id_string == NULL)
+    FILE *file = fopen(vendor_id_path, "r");
+    if (file == NULL)
     {
-        return false;
+        return 0;
     }
 
-    long int vendor_id = strtol(vendor_id_string, NULL, 16);
-    free(vendor_id_string);
+    unsigned int vendor_id;
+    int result = fscanf(file, "%x", &vendor_id);
+    fclose(file);
+
+    if (result != 1)
+    {
+        return 0;
+    }
 
     return vendor_id == MICROSOFT_NVME_VENDOR_ID;
 }
