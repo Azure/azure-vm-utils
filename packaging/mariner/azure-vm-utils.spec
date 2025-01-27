@@ -21,7 +21,7 @@ experience on Azure.
 %autosetup
 
 %build
-%cmake -DVERSION="%{version}-%{release}"
+%cmake -DVERSION="%{version}-%{release}" -DENABLE_TESTS=1
 %cmake_build
 
 %install

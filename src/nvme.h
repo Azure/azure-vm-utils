@@ -1,7 +1,11 @@
 /**
  * Copyright (c) Microsoft Corporation. All rights reserved.
- * Licensed under the MIT License. See LICENSE in the project root for license information.
+ * Licensed under the MIT License. See LICENSE in the project root for license
+ * information.
  */
+
+#ifndef __NVME_H__
+#define __NVME_H__
 
 #include <linux/types.h>
 
@@ -52,3 +56,14 @@ struct nvme_id_ns
     __u8 rsvd192[192];
     __u8 vs[3712];
 };
+
+#define NVME_ADMIN_IDENTFY_NAMESPACE_OPCODE 0x06
+
+int nvme_nsid_from_namespace_device_path(const char *namespace_path);
+struct nvme_id_ns *nvme_identify_namespace(const char *device_path, int nsid);
+char *nvme_identify_namespace_vs(const char *device_path, int nsid);
+
+int get_nsid_from_namespace_device_path(const char *namespace_path);
+char *nvme_identify_namespace_vs_for_namespace_device(const char *namespace_path);
+
+#endif // __NVME_H__

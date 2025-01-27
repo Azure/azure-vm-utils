@@ -2,6 +2,10 @@
 
 set -eux -o pipefail
 
+# Ensure dependencies are installed and up-to-date.
+sudo apt update
+sudo apt install gcc pandoc cmake devscripts debhelper libcmocka-dev build-essential clang-format cppcheck -y
+
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 git_version="$(git describe --tags --always --dirty)"
 git_ref="$(echo "${git_version}" | sed 's/.*-g//' | sed 's/-dirty/DIRTY/')"
