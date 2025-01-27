@@ -4,7 +4,7 @@ set -eux -o pipefail
 
 # Ensure dependencies are installed and up-to-date.
 sudo apt update
-sudo apt install gcc pandoc cmake devscripts debhelper libcmocka-dev build-essential clang-format cppcheck -y
+sudo apt install gcc pandoc cmake devscripts debhelper libcmocka-dev build-essential clang-format cppcheck pkg-config -y
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 git_version="$(git describe --tags --always --dirty)"
