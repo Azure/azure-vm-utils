@@ -27,7 +27,7 @@ jobs:
     - name: Setup
       run: |
         sudo apt update
-        sudo apt install gcc pandoc clang-format cmake -y
+        sudo apt install gcc pandoc cmake -y
     - name: Build & install project with cmake
       run: |
         cmake -B build -S .
