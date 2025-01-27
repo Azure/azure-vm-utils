@@ -1,9 +1,14 @@
-file(GLOB_RECURSE ALL_SOURCE_FILES *.c *.h)
+file(GLOB ALL_SOURCE_FILES src/*.[ch] tests/*.[ch])
 
-add_custom_target(
-        cppcheck
-        COMMAND /usr/bin/cppcheck
-        --enable=all
-        --suppress=missingIncludeSystem
-        ${ALL_SOURCE_FILES}
+set(CPPCHECK_COMMAND
+    cppcheck
+    --enable=all
+    --suppress=missingIncludeSystem
+    -I${CMAKE_SOURCE_DIR}/src
+    ${ALL_SOURCE_FILES}
+)
+
+add_custom_target(cppcheck
+    COMMAND ${CPPCHECK_COMMAND}
+    COMMENT "Running cppcheck on source files"
 )
