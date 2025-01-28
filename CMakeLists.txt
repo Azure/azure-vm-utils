@@ -13,6 +13,7 @@ endif()
 include(cmake/cppcheck.cmake)
 include(cmake/clangformat.cmake)
 include(cmake/doc.cmake)
+include(cmake/python.cmake)
 
 include(CTest)
 enable_testing()

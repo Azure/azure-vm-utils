@@ -72,3 +72,9 @@ jobs:
     - name: Check cppcheck
       run: |
         make -C build cppcheck
+    - name: Check python scripts
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+        pip install -r selftest/test-requirements.txt
+        make -C build python-lint
