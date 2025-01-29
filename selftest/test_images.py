@@ -249,7 +249,7 @@ class TestVMs:
 
         # Wait for the VM to be ready
         status = "unknown"
-        while status not in ["running", "degraded"]:
+        while status not in ("running", "degraded"):
             proc = subprocess_run(
                 ssh_command + ["cloud-init", "status", "--wait"], check=False
             )
