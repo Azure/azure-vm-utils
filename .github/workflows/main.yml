@@ -76,5 +76,9 @@ jobs:
       run: |
         python -m venv venv
         source venv/bin/activate
-        pip install -r selftest/test-requirements.txt
+        if [ ${{ matrix.os }} == "ubuntu-20.04" ]; then
+          pip install -r selftest/test-requirements-frozen-py38.txt
+        else
+          pip install -r selftest/test-requirements-frozen.txt
+        fi
         make -C build python-lint
