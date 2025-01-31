@@ -9,6 +9,7 @@ Source0:        %{name}_dev.tgz
 
 BuildRequires:  cmake
 BuildRequires:  gcc
+BuildRequires:  libcmocka-devel
 
 %description
 A collection of utilities and udev rules to make the most of the Linux
@@ -34,4 +35,5 @@ experience on Azure.
 %{_mandir}/man8/azure-nvme-id.8.gz
 
 %changelog
-%autochangelog
+* Wed Feb 05 2025 Test <test.packaging@no.where> - %{__git_version}-%{__git_release}
+- Test test test

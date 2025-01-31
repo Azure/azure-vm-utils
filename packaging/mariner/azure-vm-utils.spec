@@ -12,6 +12,8 @@ BuildRequires:  cmake
 BuildRequires:  gcc
 BuildRequires:  glibc-devel
 BuildRequires:  kernel-headers
+BuildRequires:  libcmocka-devel
+BuildRequires:  make
 
 %description
 A collection of utilities and udev rules to make the most of the Linux
