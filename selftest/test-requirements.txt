@@ -1,0 +1,13 @@
+autoflake
+black
+flake8
+isort
+mypy
+pycodestyle
+pyflakes
+pylint
+pytest
+pytest-xdist
+requests
+types-requests
+typing_extensions
