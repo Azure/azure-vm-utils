@@ -28,6 +28,7 @@ struct nvme_controller
     char model[MAX_PATH];
 };
 
+void trim_trailing_whitespace(char *str);
 int is_microsoft_nvme_device(const char *device_name);
 int is_nvme_namespace(const struct dirent *entry);
 int enumerate_namespaces_for_controller(struct nvme_controller *ctrl);

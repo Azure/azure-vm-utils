@@ -1,4 +1,10 @@
+/**
+ * Copyright (c) Microsoft Corporation. All rights reserved.
+ * Licensed under the MIT License. See LICENSE in the project root for license
+ * information.
+ */
 
+#include <ctype.h>
 #include <dirent.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -10,6 +16,18 @@
 #include "nvme.h"
 
 /**
+ * Trim trailing whitespace from a string in-place.
+ */
+void trim_trailing_whitespace(char *str)
+{
+    size_t len = strlen(str);
+    while (len > 0 && isspace((unsigned char)str[len - 1]))
+    {
+        str[--len] = '\0'; // Replace trailing whitespace with null terminator
+    }
+}
+
+/**
  * Callback for scandir() to filter for NVMe namespaces.
  */
 int is_nvme_namespace(const struct dirent *entry)
@@ -19,6 +37,62 @@ int is_nvme_namespace(const struct dirent *entry)
 
     // Check for NVME controller name format: nvme<ctrl id>n<ns id>
     return sscanf(entry->d_name, "nvme%un%u%c", &ctrl, &nsid, &p) == 2;
+}
+
+/**
+ * Identify namespace without using vendor-specific command set.
+ * Used as a fallback when vendor-specific command set is not supported.
+ */
+void identify_namespace_without_vs(const char *controller_sys_path, const char *namespace_path)
+{
+    char model_name[MAX_PATH] = {
+        0,
+    };
+    char model_path[MAX_PATH];
+    snprintf(model_path, sizeof(model_path), "%s/model", controller_sys_path);
+
+    FILE *file = fopen(model_path, "r");
+    if (file == NULL)
+    {
+        DEBUG_PRINTF("failed to open %s: %m\n", model_path);
+        return;
+    }
+
+    char *result = fgets(model_name, sizeof(model_name), file);
+    if (result == NULL)
+    {
+        DEBUG_PRINTF("failed to read model name from %s: %m\n", model_path);
+    }
+
+    fclose(file);
+
+    trim_trailing_whitespace(model_name);
+    DEBUG_PRINTF("read model name=\"%s\"\n", model_name);
+
+    if (strcmp(model_name, "MSFT NVMe Accelerator v1.0") == 0)
+    {
+        // Microsoft Azure NVMe Accelerator v1.0 supports remote OS and data disks.
+        // nsid=1 is the OS disk and nsid=2+ for data disks.
+        // A data disk's lun id == nsid - 2.
+        int nsid = get_nsid_from_namespace_device_path(namespace_path);
+        if (nsid == 1)
+        {
+            printf("%s: type=os\n", namespace_path);
+        }
+        else if (nsid > 1)
+        {
+            printf("%s: type=data,lun=%d\n", namespace_path, nsid - 2);
+        }
+        else
+        {
+            printf("%s: \n", namespace_path);
+        }
+    }
+    else
+    {
+        printf("%s: \n", namespace_path);
+        return;
+    }
 }
 
 /**
@@ -44,7 +118,14 @@ int enumerate_namespaces_for_controller(struct nvme_controller *ctrl)
         char *vs = nvme_identify_namespace_vs_for_namespace_device(namespace_path);
         if (vs != NULL)
         {
-            printf("%s: %s\n", namespace_path, vs);
+            if (vs[0] == 0)
+            {
+                identify_namespace_without_vs(ctrl->sys_path, namespace_path);
+            }
+            else
+            {
+                printf("%s: %s\n", namespace_path, vs);
+            }
             free(vs);
         }
         free(namelist[i]);
