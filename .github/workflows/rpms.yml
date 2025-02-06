@@ -1,0 +1,75 @@
+name: RPM Packaging CI
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        container:
+          - fedora:41
+          - ghcr.io/almalinux/9-base:latest
+          - ghcr.io/almalinux/8-base:latest
+          - mcr.microsoft.com/cbl-mariner/base/core:2.0
+          - mcr.microsoft.com/azurelinux/base/core:3.0
+
+    container:
+      image: ${{ matrix.container }}
+      options: --user root
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Identify OS
+        run: cat /etc/os-release
+      - name: Install dependencies
+        run: |
+          set -x
+          id
+          case "${{ matrix.container }}" in
+            *almalinux/8*)
+              dnf install -y 'dnf-command(config-manager)'
+              dnf config-manager --set-enabled powertools
+              ;;
+            *almalinux/9*)
+              dnf install -y 'dnf-command(config-manager)'
+              dnf config-manager --set-enabled crb
+              ;;
+            *azurelinux*|*cbl-mariner*)
+              export HOME=/root # tdnf requires HOME to be set to /root
+              tdnf install -y awk ca-certificates dnf --verbose
+              ;;
+          esac
+          dnf install -y git sudo
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Get tags from upstream, if needed
+        if: github.repository != 'Azure/azure-vm-utils'
+        run: |
+          git remote add upstream https://github.com/Azure/azure-vm-utils.git
+          git fetch upstream --tags
+      - name: Build RPMs
+        run: |
+          set -x
+          git config --global --add safe.directory "$(pwd)"
+          ./scripts/build-rpm.sh
+      - name: Install rpms
+        run: |
+          rpm -Uvh -i out/*.rpm
+      - name: Verify installation
+        run: |
+          set -x
+          rpm -qa azure-vm-utils
+          test -f /usr/share/man/man8/azure-nvme-id.8.gz
+          test -f /usr/sbin/azure-nvme-id || test -f /usr/bin/azure-nvme-id
+          test -f /usr/lib/dracut/modules.d/97azure-disk/module-setup.sh
+          test -f /usr/lib/udev/rules.d/80-azure-disk.rules
+          azure-nvme-id --version

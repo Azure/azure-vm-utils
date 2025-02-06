@@ -30,7 +30,12 @@ cd "${project_dir}/packaging/${distro}"
 
 # Install dependencies.
 build_requirements=$(grep ^BuildRequires azure-vm-utils.spec | awk '{{print $2}}' | tr '\n' ' ')
-sudo dnf install -y ${build_requirements}
+install_build_requirements_cmd="dnf install -y ${build_requirements} rpm-build dracut"
+if [[ $UID -ne 0 ]]; then
+    sudo $install_build_requirements_cmd
+else
+    $install_build_requirements_cmd
+fi
 
 # Build RPM.
 rpmbuild -ba --define "__git_version ${version}" --define "__git_release ${release}" --define "_topdir ${build_dir}" azure-vm-utils.spec
