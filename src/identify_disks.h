@@ -8,6 +8,7 @@
 #define __IDENTIFY_DISKS_H__
 
 #include <dirent.h>
+#include <json-c/json.h>
 #include <stdio.h>
 
 #define MAX_PATH 4096
@@ -28,11 +29,21 @@ struct nvme_controller
     char model[MAX_PATH];
 };
 
+struct context
+{
+    enum
+    {
+        PLAIN,
+        JSON
+    } output_format;
+};
+
 void trim_trailing_whitespace(char *str);
 int is_microsoft_nvme_device(const char *device_name);
 int is_nvme_namespace(const struct dirent *entry);
-int enumerate_namespaces_for_controller(struct nvme_controller *ctrl);
+void enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct context *ctx,
+                                         json_object *namespaces_array);
 int is_azure_nvme_controller(const struct dirent *entry);
-int identify_disks(void);
+int identify_disks(struct context *ctx);
 
 #endif // __IDENTIFY_DISKS_H__

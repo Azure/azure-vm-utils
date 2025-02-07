@@ -141,6 +141,7 @@ static int teardown(void **state)
 static void _setup_nvme0_microsoft_no_name_namespaces(void)
 {
     create_file(fake_sys_class_nvme_path, "nvme0/device/vendor", "0x1414");
+    create_file(fake_sys_class_nvme_path, "nvme0/model", "Unknown model");
 
     // nothing to expect as no namespaces are iterated through.
 }
@@ -151,6 +152,7 @@ static void _setup_nvme0_microsoft_no_name_namespaces(void)
 static void _setup_nvme1_microsoft_one_namespace(void)
 {
     create_file(fake_sys_class_nvme_path, "nvme1/device/vendor", "0x1414");
+    create_file(fake_sys_class_nvme_path, "nvme1/model", "Unknown model");
     create_dir(fake_sys_class_nvme_path, "nvme1/nvme1n1");
 
     expect_string(__wrap_nvme_identify_namespace_vs_for_namespace_device, namespace_path, "/dev/nvme1n1");
@@ -164,6 +166,7 @@ static void _setup_nvme1_microsoft_one_namespace(void)
 static void _setup_nvme2_microsoft_two_namespaces(void)
 {
     create_file(fake_sys_class_nvme_path, "nvme2/device/vendor", "0x1414");
+    create_file(fake_sys_class_nvme_path, "nvme2/model", "Unknown model");
     create_dir(fake_sys_class_nvme_path, "nvme2/nvme2n1");
     create_dir(fake_sys_class_nvme_path, "nvme2/nvme2n2");
 
@@ -183,6 +186,7 @@ static void _setup_nvme2_microsoft_two_namespaces(void)
 static void _setup_nvme4_non_microsoft(void)
 {
     create_file(fake_sys_class_nvme_path, "nvme4/device/vendor", "0x0000");
+    create_file(fake_sys_class_nvme_path, "nvme4/model", "Unknown model");
     create_dir(fake_sys_class_nvme_path, "nvme4/nvme4n1");
     create_dir(fake_sys_class_nvme_path, "nvme4/nvme4n2");
 }
@@ -328,7 +332,9 @@ static void test_identify_disks_no_sys_class_nvme_present(void **state)
              fake_sys_class_nvme_path);
     remove_temp_dir(fake_sys_class_nvme_path);
 
-    int result = identify_disks();
+    struct context ctx = {.output_format = PLAIN};
+    int result = identify_disks(&ctx);
+
     assert_int_equal(result, 0);
     assert_string_equal(capture_stderr(), expected_string);
     assert_string_equal(capture_stdout(), "");
@@ -377,7 +383,9 @@ static void test_identify_disks(void **state)
         if (test_cases[i].setup_func)
             test_cases[i].setup_func();
 
-        int result = identify_disks();
+        struct context ctx = {.output_format = PLAIN};
+        int result = identify_disks(&ctx);
+
         assert_int_equal(result, 0);
         assert_string_equal(capture_stderr(), test_cases[i].expected_stderr);
         assert_string_equal(capture_stdout(), test_cases[i].expected_stdout);
@@ -399,7 +407,8 @@ static void test_identify_disks_combined(void **state)
     _setup_nvme9_direct_disk_v2();
     _setup_nvme10_direct_disk_v2_missing_vs();
 
-    int result = identify_disks();
+    struct context ctx = {.output_format = PLAIN};
+    int result = identify_disks(&ctx);
 
     assert_int_equal(result, 0);
     assert_string_equal(capture_stderr(), "");
@@ -422,6 +431,199 @@ static void test_identify_disks_combined(void **state)
                                           "/dev/nvme10n1: type=local\n");
 }
 
+static void test_identify_disks_combined_json(void **state)
+{
+    (void)state; // Unused parameter
+
+    _setup_nvme0_microsoft_no_name_namespaces();
+    _setup_nvme1_microsoft_one_namespace();
+    _setup_nvme2_microsoft_two_namespaces();
+    _setup_nvme4_non_microsoft();
+    _setup_nvme5_microsoft_mixed_namespaces();
+    _setup_nvme6_remote_accelerator_v1_with_vs();
+    _setup_nvme7_remote_accelerator_v1_without_vs();
+    _setup_nvme8_direct_disk_v1_without_vs();
+    _setup_nvme9_direct_disk_v2();
+    _setup_nvme10_direct_disk_v2_missing_vs();
+
+    struct context ctx = {.output_format = JSON};
+    int result = identify_disks(&ctx);
+
+    assert_int_equal(result, 0);
+    assert_string_equal(capture_stderr(), "");
+
+    // To help with diffing failures, we split the expected output into lines.
+    const char *json_output = capture_stdout();
+    const char *expected_lines[] = {"[",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme1n1\",",
+                                    "    \"model\": \"Unknown model\",",
+                                    "    \"properties\": {",
+                                    "      \"key1\": \"nvme1n1value1\",",
+                                    "      \"key2\": \"nvme1n1value2\"",
+                                    "    },",
+                                    "    \"vs\": \"key1=nvme1n1value1,key2=nvme1n1value2\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme2n1\",",
+                                    "    \"model\": \"Unknown model\",",
+                                    "    \"properties\": {",
+                                    "      \"key1\": \"nvme2n1value1\",",
+                                    "      \"key2\": \"nvme2n1value2\"",
+                                    "    },",
+                                    "    \"vs\": \"key1=nvme2n1value1,key2=nvme2n1value2\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme2n2\",",
+                                    "    \"model\": \"Unknown model\",",
+                                    "    \"properties\": {",
+                                    "      \"key1\": \"nvme2n2value1\",",
+                                    "      \"key2\": \"nvme2n2value2\"",
+                                    "    },",
+                                    "    \"vs\": \"key1=nvme2n2value1,key2=nvme2n2value2\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme5n1\",",
+                                    "    \"model\": \"Unknown model\",",
+                                    "    \"properties\": {",
+                                    "      \"key1\": \"nvme5n1value1\",",
+                                    "      \"key2\": \"nvme5n1value2\"",
+                                    "    },",
+                                    "    \"vs\": \"key1=nvme5n1value1,key2=nvme5n1value2\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme5n2\",",
+                                    "    \"model\": \"Unknown model\",",
+                                    "    \"properties\": {",
+                                    "    },",
+                                    "    \"vs\": \"\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme5n3\",",
+                                    "    \"model\": \"Unknown model\",",
+                                    "    \"properties\": {",
+                                    "    },",
+                                    "    \"vs\": null",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme5n4\",",
+                                    "    \"model\": \"Unknown model\",",
+                                    "    \"properties\": {",
+                                    "      \"key1\": \"nvme5n4value1\",",
+                                    "      \"key2\": \"nvme5n4value2\"",
+                                    "    },",
+                                    "    \"vs\": \"key1=nvme5n4value1,key2=nvme5n4value2\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme5n32\",",
+                                    "    \"model\": \"Unknown model\",",
+                                    "    \"properties\": {",
+                                    "      \"key1\": \"nvme5n32value1\"",
+                                    "    },",
+                                    "    \"vs\": \"key1=nvme5n32value1\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme5n315\",",
+                                    "    \"model\": \"Unknown model\",",
+                                    "    \"properties\": {",
+                                    "      \"key1\": \"nvme5n315value1\"",
+                                    "    },",
+                                    "    \"vs\": \"key1=nvme5n315value1\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme6n1\",",
+                                    "    \"model\": \"MSFT NVMe Accelerator v1.0\",",
+                                    "    \"properties\": {",
+                                    "      \"key1\": \"nvme6n1value1\",",
+                                    "      \"key2\": \"nvme6n1value2\"",
+                                    "    },",
+                                    "    \"vs\": \"key1=nvme6n1value1,key2=nvme6n1value2\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme7n1\",",
+                                    "    \"model\": \"MSFT NVMe Accelerator v1.0\",",
+                                    "    \"properties\": {",
+                                    "      \"type\": \"os\"",
+                                    "    },",
+                                    "    \"vs\": \"\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme7n2\",",
+                                    "    \"model\": \"MSFT NVMe Accelerator v1.0\",",
+                                    "    \"properties\": {",
+                                    "      \"type\": \"data\",",
+                                    "      \"lun\": \"0\"",
+                                    "    },",
+                                    "    \"vs\": \"\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme7n3\",",
+                                    "    \"model\": \"MSFT NVMe Accelerator v1.0\",",
+                                    "    \"properties\": {",
+                                    "      \"type\": \"data\",",
+                                    "      \"lun\": \"1\"",
+                                    "    },",
+                                    "    \"vs\": \"\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme7n4\",",
+                                    "    \"model\": \"MSFT NVMe Accelerator v1.0\",",
+                                    "    \"properties\": {",
+                                    "      \"type\": \"data\",",
+                                    "      \"lun\": \"2\"",
+                                    "    },",
+                                    "    \"vs\": \"\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme7n9\",",
+                                    "    \"model\": \"MSFT NVMe Accelerator v1.0\",",
+                                    "    \"properties\": {",
+                                    "      \"type\": \"data\",",
+                                    "      \"lun\": \"7\"",
+                                    "    },",
+                                    "    \"vs\": \"\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme8n1\",",
+                                    "    \"model\": \"Microsoft NVMe Direct Disk\",",
+                                    "    \"properties\": {",
+                                    "      \"type\": \"local\"",
+                                    "    },",
+                                    "    \"vs\": \"\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme9n1\",",
+                                    "    \"model\": \"Microsoft NVMe Direct Disk v2\",",
+                                    "    \"properties\": {",
+                                    "      \"key1\": \"nvme9n1value1\",",
+                                    "      \"key2\": \"nvme9n1value2\"",
+                                    "    },",
+                                    "    \"vs\": \"key1=nvme9n1value1,key2=nvme9n1value2\"",
+                                    "  },",
+                                    "  {",
+                                    "    \"path\": \"/dev/nvme10n1\",",
+                                    "    \"model\": \"Microsoft NVMe Direct Disk v2\",",
+                                    "    \"properties\": {",
+                                    "      \"type\": \"local\"",
+                                    "    },",
+                                    "    \"vs\": \"\"",
+                                    "  }",
+                                    "]"};
+
+    char *output_copy = strdup(json_output);
+    char *line = strtok(output_copy, "\n");
+    int line_index = 0;
+    while (line != NULL)
+    {
+        printf("checking line %d: %s\n", line_index, line);
+        assert_string_equal(line, expected_lines[line_index]);
+        line = strtok(NULL, "\n");
+        line_index++;
+    }
+
+    free(output_copy);
+}
+
 int main(void)
 {
     const struct CMUnitTest tests[] = {
@@ -429,6 +631,7 @@ int main(void)
         cmocka_unit_test_setup_teardown(test_identify_disks_no_sys_class_nvme_present, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_combined, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_disks_combined_json, setup, teardown),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);

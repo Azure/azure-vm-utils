@@ -18,8 +18,16 @@ include(cmake/python.cmake)
 include(CTest)
 enable_testing()
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(JSON_C REQUIRED json-c)
+include_directories(
+    ${CMAKE_SOURCE_DIR}/src
+    ${JSON_C_INCLUDE_DIRS}
+)
+
 add_compile_options(-Wextra -Wall $<$<CONFIG:Debug>:-Werror> -std=gnu11 -D_GNU_SOURCE=1)
 add_executable(azure-nvme-id src/debug.c src/identify_disks.c src/identify_udev.c src/main.c src/nvme.c)
+target_link_libraries(azure-nvme-id ${JSON_C_LIBRARIES})
 
 set(AZURE_NVME_ID_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/sbin" CACHE PATH "azure-nvme-id installation directory")
 set(DRACUT_MODULES_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib/dracut/modules.d/97azure-disk" CACHE PATH "dracut modules installation directory")

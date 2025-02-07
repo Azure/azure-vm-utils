@@ -6,6 +6,7 @@
 
 #include <ctype.h>
 #include <dirent.h>
+#include <json-c/json.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -98,9 +99,36 @@ char *identify_namespace_without_vs(const char *controller_sys_path, const char 
 }
 
 /**
+ * Parse a vs string and turn it into a JSON dictionary.
+ * Example: "type=local,index=2,name=nvme-600G-2"
+ */
+json_object *parse_vs_string(const char *vs)
+{
+    json_object *vs_obj = json_object_new_object();
+    char *vs_copy = strdup(vs);
+    char *token;
+    char *rest = vs_copy;
+
+    while ((token = strtok_r(rest, ",", &rest)))
+    {
+        char *key = strtok_r(token, "=", &token);
+        char *value = strtok_r(NULL, "=", &token);
+
+        if (key != NULL && value != NULL)
+        {
+            json_object_object_add(vs_obj, key, json_object_new_string(value));
+        }
+    }
+
+    free(vs_copy);
+    return vs_obj;
+}
+
+/**
  * Enumerate namespaces for a controller.
  */
-int enumerate_namespaces_for_controller(struct nvme_controller *ctrl)
+void enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct context *ctx,
+                                         json_object *namespaces_array)
 {
     struct dirent **namelist;
 
@@ -108,7 +136,7 @@ int enumerate_namespaces_for_controller(struct nvme_controller *ctrl)
     if (n < 0)
     {
         fprintf(stderr, "failed scandir for %s: %m\n", ctrl->sys_path);
-        return 1;
+        return;
     }
 
     DEBUG_PRINTF("found %d namespace(s) for controller=%s:\n", n, ctrl->name);
@@ -118,22 +146,53 @@ int enumerate_namespaces_for_controller(struct nvme_controller *ctrl)
         snprintf(namespace_path, sizeof(namespace_path), "/dev/%s", namelist[i]->d_name);
 
         char *vs = nvme_identify_namespace_vs_for_namespace_device(namespace_path);
+        char *id = NULL;
+        json_object *namespace_obj = json_object_new_object();
+        json_object_object_add(namespace_obj, "path", json_object_new_string(namespace_path));
+        json_object_object_add(namespace_obj, "model", json_object_new_string(ctrl->model));
+        json_object_array_add(namespaces_array, namespace_obj);
+
         if (vs != NULL)
         {
             if (vs[0] == 0)
             {
-                free(vs);
-                vs = identify_namespace_without_vs(ctrl->sys_path, namespace_path);
+                id = identify_namespace_without_vs(ctrl->sys_path, namespace_path);
+            }
+            else
+            {
+                id = strdup(vs);
             }
 
-            printf("%s: %s\n", namespace_path, vs);
+            if (ctx->output_format == PLAIN)
+            {
+                printf("%s: %s\n", namespace_path, id);
+            }
+        }
+
+        if (id != NULL)
+        {
+            json_object_object_add(namespace_obj, "properties", parse_vs_string(id));
+            free(id);
+        }
+        else
+        {
+            json_object_object_add(namespace_obj, "properties", json_object_new_object());
+        }
+
+        if (vs != NULL)
+        {
+            json_object_object_add(namespace_obj, "vs", json_object_new_string(vs));
             free(vs);
         }
+        else
+        {
+            json_object_object_add(namespace_obj, "vs", json_object_new_null());
+        }
+
         free(namelist[i]);
     }
 
     free(namelist);
-    return 0;
 }
 
 /**
@@ -180,17 +239,51 @@ int is_azure_nvme_controller(const struct dirent *entry)
 }
 
 /**
+ * Initialize nvme_controller structure.  Read model name from sysfs,
+ * trimming off whitespaces.
+ */
+bool initialize_nvme_controller(struct nvme_controller *ctrl, const char *name)
+{
+    char model_path[sizeof(ctrl->sys_path) + sizeof("/model")];
+
+    snprintf(ctrl->name, sizeof(ctrl->name), "%s", name);
+    snprintf(ctrl->dev_path, sizeof(ctrl->dev_path), "/dev/%s", ctrl->name);
+    snprintf(ctrl->sys_path, sizeof(ctrl->sys_path), "%s/%s", SYS_CLASS_NVME_PATH, ctrl->name);
+    snprintf(model_path, sizeof(model_path), "%s/model", ctrl->sys_path);
+
+    FILE *file = fopen(model_path, "r");
+    if (file == NULL)
+    {
+        DEBUG_PRINTF("failed to open %s: %m\n", model_path);
+        return false;
+    }
+
+    char *result = fgets(ctrl->model, sizeof(ctrl->model), file);
+    if (result == NULL)
+    {
+        DEBUG_PRINTF("failed to read model name from %s: %m\n", model_path);
+        fclose(file);
+        return false;
+    }
+
+    fclose(file);
+    trim_trailing_whitespace(ctrl->model);
+    return true;
+}
+
+/**
  * Enumerate Microsoft Azure NVMe controllers and identify disks.
  */
-int identify_disks(void)
+int identify_disks(struct context *ctx)
 {
     struct dirent **namelist;
+    json_object *namespaces_array = json_object_new_array();
 
     int n = scandir(SYS_CLASS_NVME_PATH, &namelist, is_azure_nvme_controller, versionsort);
     if (n < 0)
     {
         fprintf(stderr, "no NVMe devices in %s: %m\n", SYS_CLASS_NVME_PATH);
-        return 0;
+        n = 0;
     }
 
     DEBUG_PRINTF("found %d controllers\n", n);
@@ -198,14 +291,20 @@ int identify_disks(void)
     {
         struct nvme_controller ctrl;
 
-        snprintf(ctrl.name, sizeof(ctrl.name), "%s", namelist[i]->d_name);
-        snprintf(ctrl.dev_path, sizeof(ctrl.dev_path), "/dev/%s", ctrl.name);
-        snprintf(ctrl.sys_path, sizeof(ctrl.sys_path), "%s/%s", SYS_CLASS_NVME_PATH, ctrl.name);
-
-        enumerate_namespaces_for_controller(&ctrl);
+        initialize_nvme_controller(&ctrl, namelist[i]->d_name);
+        enumerate_namespaces_for_controller(&ctrl, ctx, namespaces_array);
         free(namelist[i]);
     }
 
     free(namelist);
+
+    if (ctx->output_format == JSON)
+    {
+        const char *json_output = json_object_to_json_string_ext(
+            namespaces_array, JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_NOSLASHESCAPE);
+        printf("%s\n", json_output);
+        json_object_put(namespaces_array);
+    }
+
     return 0;
 }

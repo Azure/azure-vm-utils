@@ -14,7 +14,7 @@ function(add_test_executable test_name)
 
     target_include_directories(${test_name} PRIVATE ${CMOCKA_INCLUDE_DIRS} src tests)
     target_link_directories(${test_name} PRIVATE ${CMOCKA_LIBRARY_DIRS})
-    target_link_libraries(${test_name} PRIVATE ${CMOCKA_LIBRARIES} dl)
+    target_link_libraries(${test_name} PRIVATE ${JSON_C_LIBRARIES} ${CMOCKA_LIBRARIES} dl)
 
     if(TEST_WRAPPED_FUNCTIONS)
         foreach(func ${TEST_WRAPPED_FUNCTIONS})

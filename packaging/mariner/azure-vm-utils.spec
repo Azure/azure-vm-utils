@@ -11,6 +11,7 @@ BuildRequires:  binutils
 BuildRequires:  cmake
 BuildRequires:  gcc
 BuildRequires:  glibc-devel
+BuildRequires:  json-c-devel
 BuildRequires:  kernel-headers
 BuildRequires:  libcmocka-devel
 BuildRequires:  make
