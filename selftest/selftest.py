@@ -686,12 +686,13 @@ class AzureVmUtilsValidator:
         # Verify disk sizes match up with IMDS configuration.
         for imds_disk in imds_data_disks:
             lun = imds_disk.get("lun")
-            expected_size_gb = int(imds_disk.get("diskSizeGB"))
+            # Disk size is actually reported in GiB not GB.
+            expected_size_gib = int(imds_disk.get("diskSizeGB"))
             disk_path = f"/dev/disk/azure/data/by-lun/{lun}"
-            actual_size_gb = get_disk_size_gb(disk_path)
+            actual_size_gib = get_disk_size_gib(disk_path)
             assert (
-                actual_size_gb == expected_size_gb
-            ), f"disk size mismatch for {disk_path}: expected {expected_size_gb} GB, found {actual_size_gb} GB"
+                actual_size_gib == expected_size_gib
+            ), f"disk size mismatch for {disk_path}: expected {expected_size_gib} GiB, found {actual_size_gib} GiB"
 
         logger.info("validate_dev_disk_azure_links_data OK: %r", data_disks)
 
