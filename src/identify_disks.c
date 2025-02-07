@@ -104,7 +104,7 @@ int enumerate_namespaces_for_controller(struct nvme_controller *ctrl)
 {
     struct dirent **namelist;
 
-    int n = scandir(ctrl->sys_path, &namelist, is_nvme_namespace, alphasort);
+    int n = scandir(ctrl->sys_path, &namelist, is_nvme_namespace, versionsort);
     if (n < 0)
     {
         fprintf(stderr, "failed scandir for %s: %m\n", ctrl->sys_path);
@@ -186,7 +186,7 @@ int identify_disks(void)
 {
     struct dirent **namelist;
 
-    int n = scandir(SYS_CLASS_NVME_PATH, &namelist, is_azure_nvme_controller, alphasort);
+    int n = scandir(SYS_CLASS_NVME_PATH, &namelist, is_azure_nvme_controller, versionsort);
     if (n < 0)
     {
         fprintf(stderr, "no NVMe devices in %s: %m\n", SYS_CLASS_NVME_PATH);

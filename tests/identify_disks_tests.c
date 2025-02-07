@@ -198,6 +198,8 @@ static void _setup_nvme5_microsoft_mixed_namespaces(void)
     create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n2");
     create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n3");
     create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n4");
+    create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n32");
+    create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n315");
 
     expect_string(__wrap_nvme_identify_namespace_vs_for_namespace_device, namespace_path, "/dev/nvme5n1");
     will_return(__wrap_nvme_identify_namespace_vs_for_namespace_device,
@@ -209,6 +211,10 @@ static void _setup_nvme5_microsoft_mixed_namespaces(void)
     expect_string(__wrap_nvme_identify_namespace_vs_for_namespace_device, namespace_path, "/dev/nvme5n4");
     will_return(__wrap_nvme_identify_namespace_vs_for_namespace_device,
                 strdup("key1=nvme5n4value1,key2=nvme5n4value2"));
+    expect_string(__wrap_nvme_identify_namespace_vs_for_namespace_device, namespace_path, "/dev/nvme5n32");
+    will_return(__wrap_nvme_identify_namespace_vs_for_namespace_device, strdup("key1=nvme5n32value1"));
+    expect_string(__wrap_nvme_identify_namespace_vs_for_namespace_device, namespace_path, "/dev/nvme5n315");
+    will_return(__wrap_nvme_identify_namespace_vs_for_namespace_device, strdup("key1=nvme5n315value1"));
 }
 
 /**
@@ -347,7 +353,9 @@ static void test_identify_disks(void **state)
         {"nvme5", _setup_nvme5_microsoft_mixed_namespaces, "",
          "/dev/nvme5n1: key1=nvme5n1value1,key2=nvme5n1value2\n"
          "/dev/nvme5n2: \n"
-         "/dev/nvme5n4: key1=nvme5n4value1,key2=nvme5n4value2\n"},
+         "/dev/nvme5n4: key1=nvme5n4value1,key2=nvme5n4value2\n"
+         "/dev/nvme5n32: key1=nvme5n32value1\n"
+         "/dev/nvme5n315: key1=nvme5n315value1\n"},
         {"nvme6", _setup_nvme6_remote_accelerator_v1_with_vs, "",
          "/dev/nvme6n1: key1=nvme6n1value1,key2=nvme6n1value2\n"},
         {"nvme7", _setup_nvme7_remote_accelerator_v1_without_vs, "",
@@ -382,7 +390,6 @@ static void test_identify_disks_combined(void **state)
 
     _setup_nvme0_microsoft_no_name_namespaces();
     _setup_nvme1_microsoft_one_namespace();
-    _setup_nvme10_direct_disk_v2_missing_vs();
     _setup_nvme2_microsoft_two_namespaces();
     _setup_nvme4_non_microsoft();
     _setup_nvme5_microsoft_mixed_namespaces();
@@ -390,18 +397,20 @@ static void test_identify_disks_combined(void **state)
     _setup_nvme7_remote_accelerator_v1_without_vs();
     _setup_nvme8_direct_disk_v1_without_vs();
     _setup_nvme9_direct_disk_v2();
+    _setup_nvme10_direct_disk_v2_missing_vs();
 
     int result = identify_disks();
 
     assert_int_equal(result, 0);
     assert_string_equal(capture_stderr(), "");
     assert_string_equal(capture_stdout(), "/dev/nvme1n1: key1=nvme1n1value1,key2=nvme1n1value2\n"
-                                          "/dev/nvme10n1: type=local\n"
                                           "/dev/nvme2n1: key1=nvme2n1value1,key2=nvme2n1value2\n"
                                           "/dev/nvme2n2: key1=nvme2n2value1,key2=nvme2n2value2\n"
                                           "/dev/nvme5n1: key1=nvme5n1value1,key2=nvme5n1value2\n"
                                           "/dev/nvme5n2: \n"
                                           "/dev/nvme5n4: key1=nvme5n4value1,key2=nvme5n4value2\n"
+                                          "/dev/nvme5n32: key1=nvme5n32value1\n"
+                                          "/dev/nvme5n315: key1=nvme5n315value1\n"
                                           "/dev/nvme6n1: key1=nvme6n1value1,key2=nvme6n1value2\n"
                                           "/dev/nvme7n1: type=os\n"
                                           "/dev/nvme7n2: type=data,lun=0\n"
@@ -409,7 +418,8 @@ static void test_identify_disks_combined(void **state)
                                           "/dev/nvme7n4: type=data,lun=2\n"
                                           "/dev/nvme7n9: type=data,lun=7\n"
                                           "/dev/nvme8n1: type=local\n"
-                                          "/dev/nvme9n1: key1=nvme9n1value1,key2=nvme9n1value2\n");
+                                          "/dev/nvme9n1: key1=nvme9n1value1,key2=nvme9n1value2\n"
+                                          "/dev/nvme10n1: type=local\n");
 }
 
 int main(void)
