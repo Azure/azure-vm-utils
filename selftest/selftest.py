@@ -764,7 +764,10 @@ class AzureVmUtilsValidator:
     def validate_dev_disk_azure_links_resource(self) -> None:
         """Validate /dev/disk/azure/resource link."""
         resource_disk = "/dev/disk/azure/resource"
-        if self.sku_config and self.sku_config.temp_disk_size_gib:
+        expected = (self.sku_config and self.sku_config.temp_disk_size_gib) or bool(
+            self.disk_info.scsi_resource_disk
+        )
+        if expected:
             assert (
                 resource_disk in self.disk_info.dev_disk_azure_links
             ), f"missing {resource_disk}"
