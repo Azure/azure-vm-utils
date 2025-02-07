@@ -61,7 +61,7 @@ set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
 include(CPack)
 
-option(ENABLE_TESTS "Enable unit tests" OFF)
+option(ENABLE_TESTS "Enable unit tests" ON)
 if(ENABLE_TESTS)
     include(cmake/tests.cmake)
 endif()
