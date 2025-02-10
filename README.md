@@ -43,6 +43,37 @@ Provides helpful symlinks in /dev/disk/azure for local, data, and os disks.
 
 # Testing
 
+## unit tests
+
+There are unit test exectuables provided to validate functionality at build-time.
+They are automatically enabled, but can be disabled with -DENABLE_TESTS=0 passed to cmake.
+
+To build without tests:
+
+```
+mkdir build && cd build
+cmake .. -DENABLE_TESTS=0
+make
+```
+
+To build and execute tests:
+
+```
+mkdir build && cd build
+cmake ..
+make
+ctest --output-on-failure
+```
+
+Optionally, ctest can be skipped in favor of running tests individually:
+
+```
+mkdir build && cd build
+cmake ..
+make
+for test in *_tests; do ./$test; done
+```
+
 ## selfcheck
 
 selfcheck is provided to validate the runtime environment of a VM.
