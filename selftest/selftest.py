@@ -480,6 +480,10 @@ class AzureNvmeIdInfo:
     azure_nvme_id_stderr: str
     azure_nvme_id_returncode: int
 
+    azure_nvme_id_help_stdout: str
+    azure_nvme_id_help_stderr: str
+    azure_nvme_id_help_returncode: int
+
     azure_nvme_id_version_stdout: str
     azure_nvme_id_version_stderr: str
     azure_nvme_id_version_returncode: int
@@ -533,6 +537,19 @@ class AzureNvmeIdInfo:
 
         logger.info("validate_azure_nvmve_id: OK")
 
+    def validate_azure_nvme_id_help(self) -> None:
+        """Validate azure-nvme-id --help outputs."""
+        assert self.azure_nvme_id_help_returncode == 0, "azure-nvme-id --help failed"
+        assert (
+            self.azure_nvme_id_help_stderr == ""
+        ), f"unexpected azure-nvme-id --help stderr: {self.azure_nvme_id_help_stderr}"
+        assert (
+            self.azure_nvme_id_help_stdout
+            and self.azure_nvme_id_help_stdout.startswith("Usage: azure-nvme-id ")
+        ), "unexpected azure-nvme-id --help stdout: {self.azure_nvme_id_help_stdout}"
+
+        logger.info("validate_azure_nvme_id_help OK: {self.azure_nvme_id_help_stdout}")
+
     def validate_azure_nvme_id_version(self) -> None:
         """Validate azure-nvme-id --version outputs."""
         assert (
@@ -553,6 +570,7 @@ class AzureNvmeIdInfo:
 
     def validate(self, disk_info: DiskInfo) -> None:
         """Validate Azure NVMe ID output."""
+        self.validate_azure_nvme_id_help()
         self.validate_azure_nvme_id_version()
         self.validate_azure_nvme_id(disk_info)
 
@@ -563,6 +581,13 @@ class AzureNvmeIdInfo:
         azure_nvme_id_stdout = proc.stdout.decode("utf-8")
         azure_nvme_id_stderr = proc.stderr.decode("utf-8")
         azure_nvme_id_returncode = proc.returncode
+
+        proc = subprocess.run(
+            ["azure-nvme-id", "--help"], capture_output=True, check=False
+        )
+        azure_nvme_id_help_stdout = proc.stdout.decode("utf-8")
+        azure_nvme_id_help_stderr = proc.stderr.decode("utf-8")
+        azure_nvme_id_help_returncode = proc.returncode
 
         proc = subprocess.run(
             ["azure-nvme-id", "--version"], capture_output=True, check=False
@@ -579,6 +604,9 @@ class AzureNvmeIdInfo:
             azure_nvme_id_stdout=azure_nvme_id_stdout,
             azure_nvme_id_stderr=azure_nvme_id_stderr,
             azure_nvme_id_returncode=azure_nvme_id_returncode,
+            azure_nvme_id_help_stdout=azure_nvme_id_help_stdout,
+            azure_nvme_id_help_stderr=azure_nvme_id_help_stderr,
+            azure_nvme_id_help_returncode=azure_nvme_id_help_returncode,
             azure_nvme_id_version_stdout=azure_nvme_id_version_stdout,
             azure_nvme_id_version_stderr=azure_nvme_id_version_stderr,
             azure_nvme_id_version_returncode=azure_nvme_id_version_returncode,
