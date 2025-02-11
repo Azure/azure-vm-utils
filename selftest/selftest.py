@@ -490,6 +490,10 @@ class AzureNvmeIdInfo:
     azure_nvme_id_version_returncode: int
     azure_nvme_id_version: str
 
+    azure_nvme_id_zzz_stdout: str
+    azure_nvme_id_zzz_stderr: str
+    azure_nvme_id_zzz_returncode: int
+
     azure_nvme_id_disks: Dict[str, AzureNvmeIdDevice]
 
     def validate_azure_nvme_id(self, disk_info: DiskInfo) -> None:
@@ -587,10 +591,28 @@ class AzureNvmeIdInfo:
 
         logger.info("validate_azure_nvme_id_version OK: %s", self.azure_nvme_id_version)
 
+    def validate_azure_nvme_id_zzz_invalid_arg(self) -> None:
+        """Validate azure-nvme-id handles invalid arguments."""
+        assert (
+            self.azure_nvme_id_zzz_returncode == 1
+        ), f"azure-nvme-id zzz rc={self.azure_nvme_id_zzz_returncode}"
+        assert (
+            self.azure_nvme_id_zzz_stderr == "invalid argument: zzz\n"
+        ), f"unexpected azure-nvme-id zzz stderr: {self.azure_nvme_id_zzz_stderr}"
+        assert (
+            self.azure_nvme_id_zzz_stdout
+            and self.azure_nvme_id_zzz_stdout.startswith("Usage: azure-nvme-id ")
+        ), (f"unexpected azure-nvme-id zzz stdout: {self.azure_nvme_id_zzz_stdout}")
+
+        logger.info(
+            "validate_azure_nvme_id_invalid_arg OK: %r", self.azure_nvme_id_zzz_stdout
+        )
+
     def validate(self, disk_info: DiskInfo) -> None:
         """Validate Azure NVMe ID output."""
         self.validate_azure_nvme_id_help()
         self.validate_azure_nvme_id_version()
+        self.validate_azure_nvme_id_zzz_invalid_arg()
         self.validate_azure_nvme_id(disk_info)
 
     @classmethod
@@ -619,6 +641,13 @@ class AzureNvmeIdInfo:
         )
         azure_nvme_id_disks = cls.parse_azure_nvme_id_output(azure_nvme_id_stdout)
 
+        proc = subprocess.run(
+            ["azure-nvme-id", "zzz"], capture_output=True, check=False
+        )
+        azure_nvme_id_zzz_stdout = proc.stdout.decode("utf-8")
+        azure_nvme_id_zzz_stderr = proc.stderr.decode("utf-8")
+        azure_nvme_id_zzz_returncode = proc.returncode
+
         azure_nvme_id_info = cls(
             azure_nvme_id_stdout=azure_nvme_id_stdout,
             azure_nvme_id_stderr=azure_nvme_id_stderr,
@@ -631,6 +660,9 @@ class AzureNvmeIdInfo:
             azure_nvme_id_version_returncode=azure_nvme_id_version_returncode,
             azure_nvme_id_version=azure_nvme_id_version,
             azure_nvme_id_disks=azure_nvme_id_disks,
+            azure_nvme_id_zzz_returncode=azure_nvme_id_zzz_returncode,
+            azure_nvme_id_zzz_stdout=azure_nvme_id_zzz_stdout,
+            azure_nvme_id_zzz_stderr=azure_nvme_id_zzz_stderr,
         )
         logger.info("azure-nvme-id info: %r", azure_nvme_id_info)
         return azure_nvme_id_info

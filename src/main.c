@@ -4,6 +4,7 @@
  * information.
  */
 
+#include <getopt.h>
 #include <string.h>
 
 #include "debug.h"
@@ -13,7 +14,11 @@
 
 void print_help(const char *program)
 {
-    printf("Usage: %s [--debug] [--udev|--help|--version]\n", program);
+    printf("Usage: %s [-d|--debug] [-u|--udev|-h|--help|-v|--version]\n", program);
+    printf("  -d, --debug    Enable debug mode\n");
+    printf("  -u, --udev     Enable udev mode\n");
+    printf("  -h, --help     Display this help message\n");
+    printf("  -v, --version  Display the version\n");
 }
 
 void print_version(const char *program)
@@ -21,32 +26,53 @@ void print_version(const char *program)
     printf("%s %s\n", program, VERSION);
 }
 
-int main(int argc, const char **argv)
+void print_invalid_argument(const char *program, const char *argument)
+{
+    fprintf(stderr, "invalid argument: %s\n", argument);
+    print_help(program);
+}
+
+int main(int argc, char **argv)
 {
     bool udev_mode = false;
 
-    for (int i = 1; i < argc; i++)
+    int opt;
+    int option_index = 0;
+
+    static struct option long_options[] = {{"debug", no_argument, 0, 'd'},
+                                           {"udev", no_argument, 0, 'u'},
+                                           {"version", no_argument, 0, 'v'},
+                                           {"help", no_argument, 0, 'h'},
+                                           {0, 0, 0, 0}};
+
+    while ((opt = getopt_long(argc, argv, "duvh", long_options, &option_index)) != -1)
     {
-        if (strcmp(argv[i], "--debug") == 0)
+        switch (opt)
         {
+        case 'd':
             debug = true;
-            continue;
-        }
-        if (strcmp(argv[i], "--udev") == 0)
-        {
+            break;
+        case 'u':
             udev_mode = true;
-            continue;
-        }
-        if (strcmp(argv[i], "--version") == 0)
-        {
+            break;
+        case 'v':
             print_version(argv[0]);
             return 0;
-        }
-        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
-        {
+        case 'h':
             print_help(argv[0]);
             return 0;
+        default:
+            // Error for invalid --args
+            print_invalid_argument(argv[0], argv[optind - 1]);
+            return 1;
         }
+    }
+
+    // Error for unparsed args
+    if (optind < argc)
+    {
+        print_invalid_argument(argv[0], argv[optind]);
+        return 1;
     }
 
     if (debug)
