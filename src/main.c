@@ -11,6 +11,16 @@
 #include "identify_udev.h"
 #include "version.h"
 
+void print_help(const char *program)
+{
+    printf("Usage: %s [--debug] [--udev|--help|--version]\n", program);
+}
+
+void print_version(const char *program)
+{
+    printf("%s %s\n", program, VERSION);
+}
+
 int main(int argc, const char **argv)
 {
     bool udev_mode = false;
@@ -29,12 +39,12 @@ int main(int argc, const char **argv)
         }
         if (strcmp(argv[i], "--version") == 0)
         {
-            printf("azure-nvme-id %s\n", VERSION);
+            print_version(argv[0]);
             return 0;
         }
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
         {
-            printf("Usage: %s [--debug] [--udev|--help|--version]\n", argv[0]);
+            print_help(argv[0]);
             return 0;
         }
     }
