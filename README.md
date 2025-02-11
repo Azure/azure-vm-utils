@@ -45,7 +45,7 @@ Provides helpful symlinks in /dev/disk/azure for local, data, and os disks.
 
 ## unit tests
 
-There are unit test exectuables provided to validate functionality at build-time.
+There are unit test executables provided to validate functionality at build-time.
 They are automatically enabled, but can be disabled with -DENABLE_TESTS=0 passed to cmake.
 
 To build without tests:
