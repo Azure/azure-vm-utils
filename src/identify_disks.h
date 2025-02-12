@@ -35,7 +35,6 @@ struct context
     {
         PLAIN,
         JSON,
-        JSON_PRETTY,
     } output_format;
 };
 

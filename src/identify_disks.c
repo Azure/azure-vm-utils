@@ -298,13 +298,9 @@ int identify_disks(struct context *ctx)
 
     free(namelist);
 
-    if (ctx->output_format == JSON || ctx->output_format == JSON_PRETTY)
+    if (ctx->output_format == JSON)
     {
-        int flags = JSON_C_TO_STRING_NOSLASHESCAPE;
-        if (ctx->output_format == JSON_PRETTY)
-        {
-            flags |= JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_SPACED;
-        }
+        int flags = JSON_C_TO_STRING_NOSLASHESCAPE | JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_SPACED;
 
         const char *json_output = json_object_to_json_string_ext(namespaces_array, flags);
         printf("%s\n", json_output);

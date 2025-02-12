@@ -15,11 +15,11 @@
 void print_help(const char *program)
 {
     printf("Usage: %s [-d|--debug] [-u|--udev|-h|--help|-v|--version]\n", program);
-    printf("  -d, --debug    Enable debug mode\n");
-    printf("  -u, --udev     Enable udev mode\n");
-    printf("  -h, --help     Display this help message\n");
-    printf("  -o, --output {plain|json|json-pretty} Output format (default=plain)\n");
-    printf("  -v, --version  Display the version\n");
+    printf("  -d, --debug               Enable debug mode\n");
+    printf("  -f, --format {plain|json} Output format (default=plain)\n");
+    printf("  -h, --help                Display this help message\n");
+    printf("  -u, --udev                Enable udev mode\n");
+    printf("  -v, --version             Display the version\n");
 }
 
 void print_version(const char *program)
@@ -43,9 +43,9 @@ int main(int argc, char **argv)
 
     static struct option long_options[] = {{"debug", no_argument, 0, 'd'},        {"udev", no_argument, 0, 'u'},
                                            {"version", no_argument, 0, 'v'},      {"help", no_argument, 0, 'h'},
-                                           {"output", required_argument, 0, 'o'}, {0, 0, 0, 0}};
+                                           {"format", required_argument, 0, 'o'}, {0, 0, 0, 0}};
 
-    while ((opt = getopt_long(argc, argv, "duvho:", long_options, &option_index)) != -1)
+    while ((opt = getopt_long(argc, argv, "duvhf:", long_options, &option_index)) != -1)
     {
         switch (opt)
         {
@@ -61,14 +61,10 @@ int main(int argc, char **argv)
         case 'h':
             print_help(argv[0]);
             return 0;
-        case 'o':
+        case 'f':
             if (strcmp(optarg, "json") == 0)
             {
                 ctx.output_format = JSON;
-            }
-            else if (strcmp(optarg, "json-pretty") == 0)
-            {
-                ctx.output_format = JSON_PRETTY;
             }
             else if (strcmp(optarg, "plain") == 0)
             {

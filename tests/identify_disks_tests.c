@@ -501,31 +501,6 @@ static void test_identify_disks_combined_json(void **state)
     assert_string_equal(capture_stderr(), "");
 
     const char *json_output = capture_stdout();
-    assert_string_equal(json_output, expected_combined_json_string);
-    assert_true(compare_json_strings(json_output, expected_combined_json_string));
-}
-
-static void test_identify_disks_combined_json_pretty(void **state)
-{
-    (void)state; // Unused parameter
-
-    _setup_nvme0_microsoft_no_name_namespaces();
-    _setup_nvme1_microsoft_one_namespace();
-    _setup_nvme2_microsoft_two_namespaces();
-    _setup_nvme4_non_microsoft();
-    _setup_nvme5_microsoft_mixed_namespaces();
-    _setup_nvme6_remote_accelerator_v1_with_vs();
-    _setup_nvme7_remote_accelerator_v1_without_vs();
-    _setup_nvme8_direct_disk_v1_without_vs();
-    _setup_nvme9_direct_disk_v2();
-    _setup_nvme10_direct_disk_v2_missing_vs();
-
-    struct context ctx = {.output_format = JSON_PRETTY};
-    int result = identify_disks(&ctx);
-
-    const char *json_output = capture_stdout();
-    assert_int_equal(result, 0);
-    assert_string_equal(capture_stderr(), "");
     assert_true(compare_json_strings(json_output, expected_combined_json_string));
 
     // Pretty print in all cases will have a newline after the leading bracket.
@@ -540,7 +515,6 @@ int main(void)
         cmocka_unit_test_setup_teardown(test_identify_disks, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_combined, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_combined_json, setup, teardown),
-        cmocka_unit_test_setup_teardown(test_identify_disks_combined_json_pretty, setup, teardown),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);
