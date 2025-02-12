@@ -281,10 +281,12 @@ static void _setup_nvme9_direct_disk_v2(void)
     create_file(fake_sys_class_nvme_path, "nvme9/device/vendor", "0x1414");
     create_file(fake_sys_class_nvme_path, "nvme9/model", MICROSOFT_NVME_DIRECT_DISK_V2);
     create_dir(fake_sys_class_nvme_path, "nvme9/nvme9n1");
+    create_dir(fake_sys_class_nvme_path, "nvme9/nvme9n2");
 
     expect_string(__wrap_nvme_identify_namespace_vs_for_namespace_device, namespace_path, "/dev/nvme9n1");
-    will_return(__wrap_nvme_identify_namespace_vs_for_namespace_device,
-                strdup("key1=nvme9n1value1,key2=nvme9n1value2"));
+    will_return(__wrap_nvme_identify_namespace_vs_for_namespace_device, strdup("type=local,index=0,name=nvme-500G-0"));
+    expect_string(__wrap_nvme_identify_namespace_vs_for_namespace_device, namespace_path, "/dev/nvme9n2");
+    will_return(__wrap_nvme_identify_namespace_vs_for_namespace_device, strdup("type=local,index=1,name=nvme-500G-1"));
 }
 
 /**
@@ -371,7 +373,9 @@ static void test_identify_disks(void **state)
          "/dev/nvme7n4: type=data,lun=2\n"
          "/dev/nvme7n9: type=data,lun=7\n"},
         {"nvme8", _setup_nvme8_direct_disk_v1_without_vs, "", "/dev/nvme8n1: type=local\n"},
-        {"nvme9", _setup_nvme9_direct_disk_v2, "", "/dev/nvme9n1: key1=nvme9n1value1,key2=nvme9n1value2\n"},
+        {"nvme9", _setup_nvme9_direct_disk_v2, "",
+         "/dev/nvme9n1: type=local,index=0,name=nvme-500G-0\n"
+         "/dev/nvme9n2: type=local,index=1,name=nvme-500G-1\n"},
         {"nvme10", _setup_nvme10_direct_disk_v2_missing_vs, "", "/dev/nvme10n1: type=local\n"}};
 
     for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++)
@@ -427,7 +431,8 @@ static void test_identify_disks_combined(void **state)
                                           "/dev/nvme7n4: type=data,lun=2\n"
                                           "/dev/nvme7n9: type=data,lun=7\n"
                                           "/dev/nvme8n1: type=local\n"
-                                          "/dev/nvme9n1: key1=nvme9n1value1,key2=nvme9n1value2\n"
+                                          "/dev/nvme9n1: type=local,index=0,name=nvme-500G-0\n"
+                                          "/dev/nvme9n2: type=local,index=1,name=nvme-500G-1\n"
                                           "/dev/nvme10n1: type=local\n");
 }
 
@@ -444,12 +449,13 @@ static const char *expected_combined_json_string =
 "{\"path\":\"/dev/nvme5n315\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n315value1\"},\"vs\":\"key1=nvme5n315value1\"},"
 "{\"path\":\"/dev/nvme6n1\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"key1\":\"nvme6n1value1\",\"key2\":\"nvme6n1value2\"},\"vs\":\"key1=nvme6n1value1,key2=nvme6n1value2\"},"
 "{\"path\":\"/dev/nvme7n1\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"os\"},\"vs\":\"\"},"
-"{\"path\":\"/dev/nvme7n2\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":\"0\"},\"vs\":\"\"},"
-"{\"path\":\"/dev/nvme7n3\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":\"1\"},\"vs\":\"\"},"
-"{\"path\":\"/dev/nvme7n4\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":\"2\"},\"vs\":\"\"},"
-"{\"path\":\"/dev/nvme7n9\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":\"7\"},\"vs\":\"\"},"
+"{\"path\":\"/dev/nvme7n2\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":0},\"vs\":\"\"},"
+"{\"path\":\"/dev/nvme7n3\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":1},\"vs\":\"\"},"
+"{\"path\":\"/dev/nvme7n4\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":2},\"vs\":\"\"},"
+"{\"path\":\"/dev/nvme7n9\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":7},\"vs\":\"\"},"
 "{\"path\":\"/dev/nvme8n1\",\"model\":\"Microsoft NVMe Direct Disk\",\"properties\":{\"type\":\"local\"},\"vs\":\"\"},"
-"{\"path\":\"/dev/nvme9n1\",\"model\":\"Microsoft NVMe Direct Disk v2\",\"properties\":{\"key1\":\"nvme9n1value1\",\"key2\":\"nvme9n1value2\"},\"vs\":\"key1=nvme9n1value1,key2=nvme9n1value2\"},"
+"{\"path\":\"/dev/nvme9n1\",\"model\":\"Microsoft NVMe Direct Disk v2\",\"properties\":{\"type\":\"local\",\"index\":0,\"name\":\"nvme-500G-0\"},\"vs\":\"type=local,index=0,name=nvme-500G-0\"},"
+"{\"path\":\"/dev/nvme9n2\",\"model\":\"Microsoft NVMe Direct Disk v2\",\"properties\":{\"type\":\"local\",\"index\":1,\"name\":\"nvme-500G-1\"},\"vs\":\"type=local,index=1,name=nvme-500G-1\"},"
 "{\"path\":\"/dev/nvme10n1\",\"model\":\"Microsoft NVMe Direct Disk v2\",\"properties\":{\"type\":\"local\"},\"vs\":\"\"}]\n";
 // clang-format on
 
