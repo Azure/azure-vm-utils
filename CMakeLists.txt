@@ -33,6 +33,10 @@ configure_file(
 )
 
 install(TARGETS azure-nvme-id DESTINATION ${AZURE_NVME_ID_INSTALL_DIR})
+install(FILES ${CMAKE_SOURCE_DIR}/selftest/selftest.py
+        DESTINATION ${AZURE_NVME_ID_INSTALL_DIR}
+        RENAME azure-vm-utils-selftest
+        PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ GROUP_EXECUTE GROUP_READ WORLD_EXECUTE WORLD_READ)
 
 # Install udev rules after updating "/usr/sbin/azure-nvme-id" with installed path $AZURE_NVME_ID_INSTALL_DIR.
 file(READ ${CMAKE_SOURCE_DIR}/udev/80-azure-disk.rules CONTENT)
