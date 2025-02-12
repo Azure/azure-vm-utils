@@ -18,7 +18,11 @@ experience on Azure.
 %package selftest
 Summary:        Self-test script for Azure VM Utils
 Requires:       %{name} = %{version}-%{release}
-Requires:       python3
+%if 0%{?rhel} == 8 || 0%{?centos} == 8 || 0%{?almalinux} == 8
+Requires:       python39
+%else
+Requires:       python3 >= 3.9
+%endif
 
 %description selftest
 This package contains the self-test script for the Azure VM Utils package.
@@ -35,6 +39,10 @@ This package contains the self-test script for the Azure VM Utils package.
 
 %check
 %ctest
+
+%if 0%{?rhel} == 8 && 0%{?centos} == 8 && 0%{?almalinux} == 8
+%undefine __brp_mangle_shebangs
+%endif
 
 %files
 %{_exec_prefix}/lib/dracut/modules.d/97azure-disk/module-setup.sh
