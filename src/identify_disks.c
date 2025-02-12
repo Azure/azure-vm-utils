@@ -186,7 +186,7 @@ void enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct co
         }
         else
         {
-            json_object_object_add(namespace_obj, "vs", json_object_new_null());
+            json_object_object_add(namespace_obj, "vs", NULL);
         }
 
         free(namelist[i]);
