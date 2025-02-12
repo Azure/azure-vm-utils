@@ -18,7 +18,7 @@ void print_help(const char *program)
     printf("  -d, --debug    Enable debug mode\n");
     printf("  -u, --udev     Enable udev mode\n");
     printf("  -h, --help     Display this help message\n");
-    printf("  -o, --output {plain|json} Output format (default=plain)\n");
+    printf("  -o, --output {plain|json|json-pretty} Output format (default=plain)\n");
     printf("  -v, --version  Display the version\n");
 }
 
@@ -65,6 +65,10 @@ int main(int argc, char **argv)
             if (strcmp(optarg, "json") == 0)
             {
                 ctx.output_format = JSON;
+            }
+            else if (strcmp(optarg, "json-pretty") == 0)
+            {
+                ctx.output_format = JSON_PRETTY;
             }
             else if (strcmp(optarg, "plain") == 0)
             {

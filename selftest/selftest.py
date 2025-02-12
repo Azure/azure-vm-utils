@@ -24,6 +24,7 @@ logger = logging.getLogger("selftest")
 
 # pylint: disable=line-too-long
 # pylint: disable=too-many-instance-attributes
+# pylint: disable=too-many-lines
 # pylint: disable=too-many-locals
 
 

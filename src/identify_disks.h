@@ -34,7 +34,8 @@ struct context
     enum
     {
         PLAIN,
-        JSON
+        JSON,
+        JSON_PRETTY,
     } output_format;
 };
 
