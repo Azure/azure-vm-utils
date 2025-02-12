@@ -431,6 +431,54 @@ static void test_identify_disks_combined(void **state)
                                           "/dev/nvme10n1: type=local\n");
 }
 
+// clang-format off
+static const char *expected_combined_json_string =
+"[{\"path\":\"/dev/nvme1n1\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme1n1value1\",\"key2\":\"nvme1n1value2\"},\"vs\":\"key1=nvme1n1value1,key2=nvme1n1value2\"},"
+"{\"path\":\"/dev/nvme2n1\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme2n1value1\",\"key2\":\"nvme2n1value2\"},\"vs\":\"key1=nvme2n1value1,key2=nvme2n1value2\"},"
+"{\"path\":\"/dev/nvme2n2\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme2n2value1\",\"key2\":\"nvme2n2value2\"},\"vs\":\"key1=nvme2n2value1,key2=nvme2n2value2\"},"
+"{\"path\":\"/dev/nvme5n1\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n1value1\",\"key2\":\"nvme5n1value2\"},\"vs\":\"key1=nvme5n1value1,key2=nvme5n1value2\"},"
+"{\"path\":\"/dev/nvme5n2\",\"model\":\"Unknown model\",\"properties\":{},\"vs\":\"\"},"
+"{\"path\":\"/dev/nvme5n3\",\"model\":\"Unknown model\",\"properties\":{},\"vs\":null},"
+"{\"path\":\"/dev/nvme5n4\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n4value1\",\"key2\":\"nvme5n4value2\"},\"vs\":\"key1=nvme5n4value1,key2=nvme5n4value2\"},"
+"{\"path\":\"/dev/nvme5n32\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n32value1\"},\"vs\":\"key1=nvme5n32value1\"},"
+"{\"path\":\"/dev/nvme5n315\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n315value1\"},\"vs\":\"key1=nvme5n315value1\"},"
+"{\"path\":\"/dev/nvme6n1\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"key1\":\"nvme6n1value1\",\"key2\":\"nvme6n1value2\"},\"vs\":\"key1=nvme6n1value1,key2=nvme6n1value2\"},"
+"{\"path\":\"/dev/nvme7n1\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"os\"},\"vs\":\"\"},"
+"{\"path\":\"/dev/nvme7n2\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":\"0\"},\"vs\":\"\"},"
+"{\"path\":\"/dev/nvme7n3\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":\"1\"},\"vs\":\"\"},"
+"{\"path\":\"/dev/nvme7n4\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":\"2\"},\"vs\":\"\"},"
+"{\"path\":\"/dev/nvme7n9\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":\"7\"},\"vs\":\"\"},"
+"{\"path\":\"/dev/nvme8n1\",\"model\":\"Microsoft NVMe Direct Disk\",\"properties\":{\"type\":\"local\"},\"vs\":\"\"},"
+"{\"path\":\"/dev/nvme9n1\",\"model\":\"Microsoft NVMe Direct Disk v2\",\"properties\":{\"key1\":\"nvme9n1value1\",\"key2\":\"nvme9n1value2\"},\"vs\":\"key1=nvme9n1value1,key2=nvme9n1value2\"},"
+"{\"path\":\"/dev/nvme10n1\",\"model\":\"Microsoft NVMe Direct Disk v2\",\"properties\":{\"type\":\"local\"},\"vs\":\"\"}]\n";
+// clang-format on
+
+bool compare_json_strings(const char *json_str1, const char *json_str2)
+{
+    // Parse the JSON strings into json_object structures
+    json_object *json_obj1 = json_tokener_parse(json_str1);
+    json_object *json_obj2 = json_tokener_parse(json_str2);
+
+    // Check if both JSON objects are valid
+    if (json_obj1 == NULL || json_obj2 == NULL)
+    {
+        if (json_obj1)
+            json_object_put(json_obj1);
+        if (json_obj2)
+            json_object_put(json_obj2);
+        return false;
+    }
+
+    // Compare the JSON objects
+    bool are_equal = json_object_equal(json_obj1, json_obj2);
+
+    // Free the JSON objects
+    json_object_put(json_obj1);
+    json_object_put(json_obj2);
+
+    return are_equal;
+}
+
 static void test_identify_disks_combined_json(void **state)
 {
     (void)state; // Unused parameter
@@ -449,61 +497,17 @@ static void test_identify_disks_combined_json(void **state)
     struct context ctx = {.output_format = JSON};
     int result = identify_disks(&ctx);
 
-    // clang-format off
-    const char *expected_string =
-    "[{\"path\":\"/dev/nvme1n1\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme1n1value1\",\"key2\":\"nvme1n1value2\"},\"vs\":\"key1=nvme1n1value1,key2=nvme1n1value2\"},"
-    "{\"path\":\"/dev/nvme2n1\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme2n1value1\",\"key2\":\"nvme2n1value2\"},\"vs\":\"key1=nvme2n1value1,key2=nvme2n1value2\"},"
-    "{\"path\":\"/dev/nvme2n2\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme2n2value1\",\"key2\":\"nvme2n2value2\"},\"vs\":\"key1=nvme2n2value1,key2=nvme2n2value2\"},"
-    "{\"path\":\"/dev/nvme5n1\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n1value1\",\"key2\":\"nvme5n1value2\"},\"vs\":\"key1=nvme5n1value1,key2=nvme5n1value2\"},"
-    "{\"path\":\"/dev/nvme5n2\",\"model\":\"Unknown model\",\"properties\":{},\"vs\":\"\"},"
-    "{\"path\":\"/dev/nvme5n3\",\"model\":\"Unknown model\",\"properties\":{},\"vs\":null},"
-    "{\"path\":\"/dev/nvme5n4\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n4value1\",\"key2\":\"nvme5n4value2\"},\"vs\":\"key1=nvme5n4value1,key2=nvme5n4value2\"},"
-    "{\"path\":\"/dev/nvme5n32\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n32value1\"},\"vs\":\"key1=nvme5n32value1\"},"
-    "{\"path\":\"/dev/nvme5n315\",\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n315value1\"},\"vs\":\"key1=nvme5n315value1\"},"
-    "{\"path\":\"/dev/nvme6n1\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"key1\":\"nvme6n1value1\",\"key2\":\"nvme6n1value2\"},\"vs\":\"key1=nvme6n1value1,key2=nvme6n1value2\"},"
-    "{\"path\":\"/dev/nvme7n1\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"os\"},\"vs\":\"\"},"
-    "{\"path\":\"/dev/nvme7n2\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":\"0\"},\"vs\":\"\"},"
-    "{\"path\":\"/dev/nvme7n3\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":\"1\"},\"vs\":\"\"},"
-    "{\"path\":\"/dev/nvme7n4\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":\"2\"},\"vs\":\"\"},"
-    "{\"path\":\"/dev/nvme7n9\",\"model\":\"MSFT NVMe Accelerator v1.0\",\"properties\":{\"type\":\"data\",\"lun\":\"7\"},\"vs\":\"\"},"
-    "{\"path\":\"/dev/nvme8n1\",\"model\":\"Microsoft NVMe Direct Disk\",\"properties\":{\"type\":\"local\"},\"vs\":\"\"},"
-    "{\"path\":\"/dev/nvme9n1\",\"model\":\"Microsoft NVMe Direct Disk v2\",\"properties\":{\"key1\":\"nvme9n1value1\",\"key2\":\"nvme9n1value2\"},\"vs\":\"key1=nvme9n1value1,key2=nvme9n1value2\"},"
-    "{\"path\":\"/dev/nvme10n1\",\"model\":\"Microsoft NVMe Direct Disk v2\",\"properties\":{\"type\":\"local\"},\"vs\":\"\"}]\n";
-    // clang-format on
-
     assert_int_equal(result, 0);
     assert_string_equal(capture_stderr(), "");
-    assert_string_equal(capture_stdout(), expected_string);
-}
 
-/**
- * json-c suffers from a pretty string spaced bug in earlier versions.access
- * Known to impact 0.13.1 in use on RHEL-8.access
- */
-bool check_if_jsonc_suffers_pretty_string_spaced_bug(void)
-{
-    json_object *jarray = json_object_new_array();
-    const char *json_str = json_object_to_json_string_ext(jarray, JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_SPACED);
-    bool result = strstr(json_str, "[\n ]") != NULL;
-    json_object_put(jarray);
-    return result;
-}
-
-void print_string_in_hex(const char *str)
-{
-    while (*str)
-    {
-        printf("%02x ", (unsigned char)*str);
-        str++;
-    }
-    printf("\n");
+    const char *json_output = capture_stdout();
+    assert_string_equal(json_output, expected_combined_json_string);
+    assert_true(compare_json_strings(json_output, expected_combined_json_string));
 }
 
 static void test_identify_disks_combined_json_pretty(void **state)
 {
     (void)state; // Unused parameter
-
-    bool json_c_buggy = check_if_jsonc_suffers_pretty_string_spaced_bug();
 
     _setup_nvme0_microsoft_no_name_namespaces();
     _setup_nvme1_microsoft_one_namespace();
@@ -519,201 +523,13 @@ static void test_identify_disks_combined_json_pretty(void **state)
     struct context ctx = {.output_format = JSON_PRETTY};
     int result = identify_disks(&ctx);
 
-    assert_int_equal(result, 0);
-
-    assert_string_equal(capture_stderr(), "");
-
-    // To help with diffing failures, we split the expected output into lines.
     const char *json_output = capture_stdout();
-    const char *expected_lines[] = {"[",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme1n1\",",
-                                    "    \"model\": \"Unknown model\",",
-                                    "    \"properties\": {",
-                                    "      \"key1\": \"nvme1n1value1\",",
-                                    "      \"key2\": \"nvme1n1value2\"",
-                                    "    },",
-                                    "    \"vs\": \"key1=nvme1n1value1,key2=nvme1n1value2\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme2n1\",",
-                                    "    \"model\": \"Unknown model\",",
-                                    "    \"properties\": {",
-                                    "      \"key1\": \"nvme2n1value1\",",
-                                    "      \"key2\": \"nvme2n1value2\"",
-                                    "    },",
-                                    "    \"vs\": \"key1=nvme2n1value1,key2=nvme2n1value2\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme2n2\",",
-                                    "    \"model\": \"Unknown model\",",
-                                    "    \"properties\": {",
-                                    "      \"key1\": \"nvme2n2value1\",",
-                                    "      \"key2\": \"nvme2n2value2\"",
-                                    "    },",
-                                    "    \"vs\": \"key1=nvme2n2value1,key2=nvme2n2value2\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme5n1\",",
-                                    "    \"model\": \"Unknown model\",",
-                                    "    \"properties\": {",
-                                    "      \"key1\": \"nvme5n1value1\",",
-                                    "      \"key2\": \"nvme5n1value2\"",
-                                    "    },",
-                                    "    \"vs\": \"key1=nvme5n1value1,key2=nvme5n1value2\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme5n2\",",
-                                    "    \"model\": \"Unknown model\",",
-                                    "    \"properties\": {",
-                                    "    },",
-                                    "    \"vs\": \"\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme5n3\",",
-                                    "    \"model\": \"Unknown model\",",
-                                    "    \"properties\": {",
-                                    "    },",
-                                    "    \"vs\": null",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme5n4\",",
-                                    "    \"model\": \"Unknown model\",",
-                                    "    \"properties\": {",
-                                    "      \"key1\": \"nvme5n4value1\",",
-                                    "      \"key2\": \"nvme5n4value2\"",
-                                    "    },",
-                                    "    \"vs\": \"key1=nvme5n4value1,key2=nvme5n4value2\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme5n32\",",
-                                    "    \"model\": \"Unknown model\",",
-                                    "    \"properties\": {",
-                                    "      \"key1\": \"nvme5n32value1\"",
-                                    "    },",
-                                    "    \"vs\": \"key1=nvme5n32value1\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme5n315\",",
-                                    "    \"model\": \"Unknown model\",",
-                                    "    \"properties\": {",
-                                    "      \"key1\": \"nvme5n315value1\"",
-                                    "    },",
-                                    "    \"vs\": \"key1=nvme5n315value1\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme6n1\",",
-                                    "    \"model\": \"MSFT NVMe Accelerator v1.0\",",
-                                    "    \"properties\": {",
-                                    "      \"key1\": \"nvme6n1value1\",",
-                                    "      \"key2\": \"nvme6n1value2\"",
-                                    "    },",
-                                    "    \"vs\": \"key1=nvme6n1value1,key2=nvme6n1value2\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme7n1\",",
-                                    "    \"model\": \"MSFT NVMe Accelerator v1.0\",",
-                                    "    \"properties\": {",
-                                    "      \"type\": \"os\"",
-                                    "    },",
-                                    "    \"vs\": \"\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme7n2\",",
-                                    "    \"model\": \"MSFT NVMe Accelerator v1.0\",",
-                                    "    \"properties\": {",
-                                    "      \"type\": \"data\",",
-                                    "      \"lun\": \"0\"",
-                                    "    },",
-                                    "    \"vs\": \"\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme7n3\",",
-                                    "    \"model\": \"MSFT NVMe Accelerator v1.0\",",
-                                    "    \"properties\": {",
-                                    "      \"type\": \"data\",",
-                                    "      \"lun\": \"1\"",
-                                    "    },",
-                                    "    \"vs\": \"\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme7n4\",",
-                                    "    \"model\": \"MSFT NVMe Accelerator v1.0\",",
-                                    "    \"properties\": {",
-                                    "      \"type\": \"data\",",
-                                    "      \"lun\": \"2\"",
-                                    "    },",
-                                    "    \"vs\": \"\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme7n9\",",
-                                    "    \"model\": \"MSFT NVMe Accelerator v1.0\",",
-                                    "    \"properties\": {",
-                                    "      \"type\": \"data\",",
-                                    "      \"lun\": \"7\"",
-                                    "    },",
-                                    "    \"vs\": \"\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme8n1\",",
-                                    "    \"model\": \"Microsoft NVMe Direct Disk\",",
-                                    "    \"properties\": {",
-                                    "      \"type\": \"local\"",
-                                    "    },",
-                                    "    \"vs\": \"\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme9n1\",",
-                                    "    \"model\": \"Microsoft NVMe Direct Disk v2\",",
-                                    "    \"properties\": {",
-                                    "      \"key1\": \"nvme9n1value1\",",
-                                    "      \"key2\": \"nvme9n1value2\"",
-                                    "    },",
-                                    "    \"vs\": \"key1=nvme9n1value1,key2=nvme9n1value2\"",
-                                    "  },",
-                                    "  {",
-                                    "    \"path\": \"/dev/nvme10n1\",",
-                                    "    \"model\": \"Microsoft NVMe Direct Disk v2\",",
-                                    "    \"properties\": {",
-                                    "      \"type\": \"local\"",
-                                    "    },",
-                                    "    \"vs\": \"\"",
-                                    "  }",
-                                    "]"};
+    assert_int_equal(result, 0);
+    assert_string_equal(capture_stderr(), "");
+    assert_true(compare_json_strings(json_output, expected_combined_json_string));
 
-    char *output_copy = strdup(json_output);
-    char *line = strtok(output_copy, "\n");
-    int line_index = 0;
-    while (line != NULL)
-    {
-        char *prefixed_line = NULL;
-        if (json_c_buggy && line_index > 0)
-        {
-            asprintf(&prefixed_line, " %s", expected_lines[line_index]);
-        }
-        else
-        {
-            prefixed_line = strdup(expected_lines[line_index]);
-        }
-
-        printf("checking line %d (shifted for bug=%d): %s\n", line_index, json_c_buggy, line);
-        printf("expected: ");
-        print_string_in_hex(prefixed_line);
-        printf("actual  : ");
-        print_string_in_hex(line);
-        assert_string_equal(line, prefixed_line);
-
-        if (prefixed_line)
-        {
-            free(prefixed_line);
-            prefixed_line = NULL;
-        }
-
-        line = strtok(NULL, "\n");
-        line_index++;
-    }
-
-    free(output_copy);
+    // Pretty print in all cases will have a newline after the leading bracket.
+    assert_true(strncmp(json_output, "[\n", 2) == 0);
 }
 
 int main(void)
