@@ -116,9 +116,18 @@ json_object *parse_vs_string(const char *vs)
 
         if (key != NULL && value != NULL)
         {
+            int int_value = atoi(value);
             if ((strcmp(key, "lun") == 0) || (strcmp(key, "index") == 0))
             {
-                json_object_object_add(vs_obj, key, json_object_new_int(atoi(value)));
+                if (int_value == 0 && strcmp(value, "0") != 0)
+                {
+                    fprintf(stderr, "failed to parse vs=%s key=%s value=%s as int\n", vs, key, value);
+                    json_object_object_add(vs_obj, key, json_object_new_string(value));
+                }
+                else
+                {
+                    json_object_object_add(vs_obj, key, json_object_new_int(int_value));
+                }
             }
             else
             {

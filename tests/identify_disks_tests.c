@@ -302,6 +302,19 @@ static void _setup_nvme10_direct_disk_v2_missing_vs(void)
     will_return(__wrap_nvme_identify_namespace_vs_for_namespace_device, strdup(""));
 }
 
+/**
+ * Setup nvme11: disk with non-integer lun and index (unexpected case).
+ */
+static void _setup_nvme11_non_integer_lun_and_index(void)
+{
+    create_file(fake_sys_class_nvme_path, "nvme11/device/vendor", "0x1414");
+    create_file(fake_sys_class_nvme_path, "nvme11/model", "Unknown model");
+    create_dir(fake_sys_class_nvme_path, "nvme11/nvme11n1");
+
+    expect_string(__wrap_nvme_identify_namespace_vs_for_namespace_device, namespace_path, "/dev/nvme11n1");
+    will_return(__wrap_nvme_identify_namespace_vs_for_namespace_device, strdup("type=local,index=foo,lun=bar"));
+}
+
 static void test_trim_trailing_whitespace(void **state)
 {
     (void)state; // Unused parameter
@@ -376,7 +389,12 @@ static void test_identify_disks(void **state)
         {"nvme9", _setup_nvme9_direct_disk_v2, "",
          "/dev/nvme9n1: type=local,index=0,name=nvme-500G-0\n"
          "/dev/nvme9n2: type=local,index=1,name=nvme-500G-1\n"},
-        {"nvme10", _setup_nvme10_direct_disk_v2_missing_vs, "", "/dev/nvme10n1: type=local\n"}};
+        {"nvme10", _setup_nvme10_direct_disk_v2_missing_vs, "", "/dev/nvme10n1: type=local\n"},
+        {"nvme11", _setup_nvme11_non_integer_lun_and_index,
+         "failed to parse vs=type=local,index=foo,lun=bar key=index value=foo as int\n"
+         "failed to parse vs=type=local,index=foo,lun=bar key=lun value=bar as int\n",
+         "/dev/nvme11n1: type=local,index=foo,lun=bar\n"},
+    };
 
     for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++)
     {
@@ -410,12 +428,14 @@ static void test_identify_disks_combined(void **state)
     _setup_nvme8_direct_disk_v1_without_vs();
     _setup_nvme9_direct_disk_v2();
     _setup_nvme10_direct_disk_v2_missing_vs();
+    _setup_nvme11_non_integer_lun_and_index();
 
     struct context ctx = {.output_format = PLAIN};
     int result = identify_disks(&ctx);
 
     assert_int_equal(result, 0);
-    assert_string_equal(capture_stderr(), "");
+    assert_string_equal(capture_stderr(), "failed to parse vs=type=local,index=foo,lun=bar key=index value=foo as int\n"
+                                          "failed to parse vs=type=local,index=foo,lun=bar key=lun value=bar as int\n");
     assert_string_equal(capture_stdout(), "/dev/nvme1n1: key1=nvme1n1value1,key2=nvme1n1value2\n"
                                           "/dev/nvme2n1: key1=nvme2n1value1,key2=nvme2n1value2\n"
                                           "/dev/nvme2n2: key1=nvme2n2value1,key2=nvme2n2value2\n"
@@ -433,7 +453,8 @@ static void test_identify_disks_combined(void **state)
                                           "/dev/nvme8n1: type=local\n"
                                           "/dev/nvme9n1: type=local,index=0,name=nvme-500G-0\n"
                                           "/dev/nvme9n2: type=local,index=1,name=nvme-500G-1\n"
-                                          "/dev/nvme10n1: type=local\n");
+                                          "/dev/nvme10n1: type=local\n"
+                                          "/dev/nvme11n1: type=local,index=foo,lun=bar\n");
 }
 
 // clang-format off
@@ -456,7 +477,8 @@ static const char *expected_combined_json_string =
 "{\"path\":\"/dev/nvme8n1\",\"model\":\"Microsoft NVMe Direct Disk\",\"properties\":{\"type\":\"local\"},\"vs\":\"\"},"
 "{\"path\":\"/dev/nvme9n1\",\"model\":\"Microsoft NVMe Direct Disk v2\",\"properties\":{\"type\":\"local\",\"index\":0,\"name\":\"nvme-500G-0\"},\"vs\":\"type=local,index=0,name=nvme-500G-0\"},"
 "{\"path\":\"/dev/nvme9n2\",\"model\":\"Microsoft NVMe Direct Disk v2\",\"properties\":{\"type\":\"local\",\"index\":1,\"name\":\"nvme-500G-1\"},\"vs\":\"type=local,index=1,name=nvme-500G-1\"},"
-"{\"path\":\"/dev/nvme10n1\",\"model\":\"Microsoft NVMe Direct Disk v2\",\"properties\":{\"type\":\"local\"},\"vs\":\"\"}]\n";
+"{\"path\":\"/dev/nvme10n1\",\"model\":\"Microsoft NVMe Direct Disk v2\",\"properties\":{\"type\":\"local\"},\"vs\":\"\"},"
+"{\"path\":\"/dev/nvme11n1\",\"model\":\"Unknown model\",\"properties\":{\"type\":\"local\",\"index\":\"foo\",\"lun\":\"bar\"},\"vs\":\"type=local,index=foo,lun=bar\"}]\n";
 // clang-format on
 
 bool compare_json_strings(const char *json_str1, const char *json_str2)
@@ -499,12 +521,14 @@ static void test_identify_disks_combined_json(void **state)
     _setup_nvme8_direct_disk_v1_without_vs();
     _setup_nvme9_direct_disk_v2();
     _setup_nvme10_direct_disk_v2_missing_vs();
+    _setup_nvme11_non_integer_lun_and_index();
 
     struct context ctx = {.output_format = JSON};
     int result = identify_disks(&ctx);
 
     assert_int_equal(result, 0);
-    assert_string_equal(capture_stderr(), "");
+    assert_string_equal(capture_stderr(), "failed to parse vs=type=local,index=foo,lun=bar key=index value=foo as int\n"
+                                          "failed to parse vs=type=local,index=foo,lun=bar key=lun value=bar as int\n");
 
     const char *json_output = capture_stdout();
     assert_true(compare_json_strings(json_output, expected_combined_json_string));
