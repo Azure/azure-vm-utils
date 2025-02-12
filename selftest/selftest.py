@@ -611,7 +611,9 @@ class AzureNvmeIdInfo:
             )
             for disk in self.azure_nvme_id_json_disks.values()
         ), "missing model in azure-nvme-id --output json"
-        logger.info("validate_azure_nvmve_id_json OK: %r", self.azure_nvme_id_json_stdout)
+        logger.info(
+            "validate_azure_nvmve_id_json OK: %r", self.azure_nvme_id_json_stdout
+        )
 
     def validate_azure_nvme_id_version(self) -> None:
         """Validate azure-nvme-id --version outputs."""
