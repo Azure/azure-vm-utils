@@ -41,9 +41,15 @@ int main(int argc, char **argv)
     int opt;
     int option_index = 0;
 
-    static struct option long_options[] = {{"debug", no_argument, 0, 'd'},        {"udev", no_argument, 0, 'u'},
-                                           {"version", no_argument, 0, 'v'},      {"help", no_argument, 0, 'h'},
-                                           {"format", required_argument, 0, 'o'}, {0, 0, 0, 0}};
+    // clang-format off
+    static struct option long_options[] = {
+           {"debug", no_argument, 0, 'd'},
+           {"udev", no_argument, 0, 'u'},
+           {"version", no_argument, 0, 'v'},
+           {"help", no_argument, 0, 'h'},
+           {"format", required_argument, 0, 'f'},
+           {0, 0, 0, 0}};
+    // clang-format on
 
     while ((opt = getopt_long(argc, argv, "duvhf:", long_options, &option_index)) != -1)
     {

@@ -589,7 +589,7 @@ class AzureNvmeIdInfo:
         logger.info("validate_azure_nvme_id_help OK: {self.azure_nvme_id_help_stdout}")
 
     def validate_azure_nvme_id_json(self, disk_info: DiskInfo) -> None:
-        """Validate azure-nvme-id --output json outputs."""
+        """Validate azure-nvme-id --format json outputs."""
         assert self.azure_nvme_id_json_returncode == 0, "azure-nvme-id failed"
         if not os.path.exists("/sys/class/nvme"):
             assert (
@@ -611,7 +611,7 @@ class AzureNvmeIdInfo:
                 "Microsoft NVMe Direct Disk v2",
             )
             for disk in self.azure_nvme_id_json_disks.values()
-        ), "missing model in azure-nvme-id --output json"
+        ), "missing model in azure-nvme-id --format json"
         logger.info(
             "validate_azure_nvmve_id_json OK: %r", self.azure_nvme_id_json_stdout
         )
@@ -669,7 +669,7 @@ class AzureNvmeIdInfo:
         azure_nvme_id_disks = cls.parse_azure_nvme_id_output(azure_nvme_id_stdout)
 
         proc = subprocess.run(
-            ["azure-nvme-id", "--output", "json"], capture_output=True, check=False
+            ["azure-nvme-id", "--format", "json"], capture_output=True, check=False
         )
         azure_nvme_id_json_stdout = proc.stdout.decode("utf-8")
         azure_nvme_id_json_stderr = proc.stderr.decode("utf-8")
@@ -735,7 +735,7 @@ class AzureNvmeIdInfo:
                 "model": "MSFT NVMe Accelerator v1.0",
                 "properties": {
                     "type": "data",
-                    "lun": "31"
+                    "lun": 31
                 },
                 "vs": ""
             },
@@ -744,7 +744,7 @@ class AzureNvmeIdInfo:
                 "model": "Microsoft NVMe Direct Disk v2",
                 "properties": {
                     "type": "local",
-                    "index": "1",
+                    "index": 1,
                     "name": "nvme-440G-1"
                 },
                 "vs": "type=local,index=1,name=nvme-440G-1"
