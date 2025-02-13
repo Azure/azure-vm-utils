@@ -17,6 +17,6 @@ Description: A collection of utilities and udev rules to make the most of the
 Package: azure-vm-utils-selftest
 Architecture: all
 Multi-Arch: foreign
-Depends: ${misc:Depends}, python3, azure-vm-utils
+Depends: ${misc:Depends}, python3, azure-vm-utils (= ${binary:Version})
 Description: Self-test script for Azure VM Utils
  This package contains the self-test script for the Azure VM Utils package.
