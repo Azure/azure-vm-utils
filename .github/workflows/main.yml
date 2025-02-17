@@ -27,7 +27,7 @@ jobs:
     - name: Setup
       run: |
         sudo apt update
-        sudo apt install gcc pandoc cmake -y
+        sudo apt install gcc pandoc cmake libjson-c-dev -y
     - name: Build & install project with cmake with tests disabled
       run: |
         cmake -B build -S . -DENABLE_TESTS=0
