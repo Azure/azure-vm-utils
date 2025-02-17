@@ -9,6 +9,7 @@
 
 import argparse
 import glob
+import json
 import logging
 import os
 import re
@@ -23,6 +24,7 @@ logger = logging.getLogger("selftest")
 
 # pylint: disable=line-too-long
 # pylint: disable=too-many-instance-attributes
+# pylint: disable=too-many-lines
 # pylint: disable=too-many-locals
 
 
@@ -465,10 +467,11 @@ class AzureNvmeIdDevice:
     """Azure NVMe ID device."""
 
     device: str
+    model: Optional[str]
     nvme_id: str
     type: Optional[str]
     index: Optional[int]
-    lun: Optional[str]
+    lun: Optional[int]
     name: Optional[str]
     extra: Dict[str, str]
 
@@ -480,6 +483,12 @@ class AzureNvmeIdInfo:
     azure_nvme_id_stdout: str
     azure_nvme_id_stderr: str
     azure_nvme_id_returncode: int
+    azure_nvme_id_disks: Dict[str, AzureNvmeIdDevice]
+
+    azure_nvme_id_json_stdout: str
+    azure_nvme_id_json_stderr: str
+    azure_nvme_id_json_returncode: int
+    azure_nvme_id_json_disks: Dict[str, AzureNvmeIdDevice]
 
     azure_nvme_id_help_stdout: str
     azure_nvme_id_help_stderr: str
@@ -494,7 +503,61 @@ class AzureNvmeIdInfo:
     azure_nvme_id_zzz_stderr: str
     azure_nvme_id_zzz_returncode: int
 
-    azure_nvme_id_disks: Dict[str, AzureNvmeIdDevice]
+    def _validate_azure_nvme_disks(
+        self, azure_nvme_id_disks: Dict[str, AzureNvmeIdDevice], disk_info: DiskInfo
+    ) -> None:
+        disk_cfg: Optional[AzureNvmeIdDevice] = None
+        for device_name, disk_cfg in azure_nvme_id_disks.items():
+            assert f"/dev/{device_name}" == disk_cfg.device
+            assert disk_cfg.device.startswith(
+                "/dev/nvme"
+            ), f"unexpected device: {disk_cfg}"
+
+        for device_name in disk_info.nvme_local_disks_v2:
+            assert (
+                device_name in azure_nvme_id_disks
+            ), f"missing azure-nvme-id for {device_name}"
+            disk_cfg = azure_nvme_id_disks.get(device_name)
+            assert disk_cfg, f"failed to find azure-nvme-id for {device_name}"
+            assert disk_cfg.type == "local", f"unexpected local disk type {disk_cfg}"
+            assert disk_cfg.name, f"unexpected local disk name {disk_cfg}"
+            assert disk_cfg.index, f"unexpected local disk index {disk_cfg}"
+            assert disk_cfg.lun is None, f"unexpected local disk lun {disk_cfg}"
+            assert disk_cfg.nvme_id, f"unexpected local disk id {disk_cfg}"
+            assert not disk_cfg.extra, f"unexpected local disk extra {disk_cfg}"
+
+        for device_name in disk_info.nvme_local_disks_v1:
+            assert (
+                device_name in azure_nvme_id_disks
+            ), f"missing azure-nvme-id for {device_name}"
+            disk_cfg = azure_nvme_id_disks.get(device_name)
+            assert disk_cfg, f"failed to find azure-nvme-id for {device_name}"
+            assert disk_cfg.type == "local", f"unexpected disk type {disk_cfg}"
+            assert not disk_cfg.name, f"unexpected disk name {disk_cfg}"
+            assert not disk_cfg.index, f"unexpected disk index {disk_cfg}"
+            assert disk_cfg.lun is None, f"unexpected local disk lun {disk_cfg}"
+            assert disk_cfg.nvme_id, f"unexpected disk id {disk_cfg}"
+            assert not disk_cfg.extra, f"unexpected disk extra {disk_cfg}"
+
+        for device_name in disk_info.nvme_remote_disks:
+            assert (
+                device_name in azure_nvme_id_disks
+            ), f"missing azure-nvme-id for {device_name}"
+            disk_cfg = azure_nvme_id_disks.get(device_name)
+            assert disk_cfg, f"failed to find azure-nvme-id for {device_name}"
+            assert disk_cfg.type in (
+                "os",
+                "data",
+            ), f"unexpected remote disk type {disk_cfg}"
+            if disk_cfg.type == "data":
+                assert (
+                    disk_cfg.lun is not None and disk_cfg.lun >= 0
+                ), f"unexpected remote disk index {disk_cfg}"
+            else:
+                assert disk_cfg.lun is None, f"unexpected remote disk index {disk_cfg}"
+            assert not disk_cfg.name, f"unexpected remote disk name {disk_cfg}"
+            assert disk_cfg.nvme_id, f"unexpected remote disk id {disk_cfg}"
+            assert not disk_cfg.extra, f"unexpected remote disk extra {disk_cfg}"
 
     def validate_azure_nvme_id(self, disk_info: DiskInfo) -> None:
         """Validate azure-nvme-id outputs."""
@@ -509,56 +572,8 @@ class AzureNvmeIdInfo:
                 self.azure_nvme_id_stderr == ""
             ), f"unexpected azure-nvme-id stderr: {self.azure_nvme_id_stderr}"
 
-        disk_cfg: Optional[AzureNvmeIdDevice] = None
-        for device_name, disk_cfg in self.azure_nvme_id_disks.items():
-            assert f"/dev/{device_name}" == disk_cfg.device
-            assert disk_cfg.device.startswith(
-                "/dev/nvme"
-            ), f"unexpected device: {disk_cfg}"
-
-        for device_name in disk_info.nvme_local_disks_v2:
-            assert (
-                device_name in self.azure_nvme_id_disks
-            ), f"missing azure-nvme-id for {device_name}"
-            disk_cfg = self.azure_nvme_id_disks.get(device_name)
-            assert disk_cfg, f"failed to find azure-nvme-id for {device_name}"
-            assert disk_cfg.type == "local", f"unexpected local disk type {disk_cfg}"
-            assert disk_cfg.name, f"unexpected local disk name {disk_cfg}"
-            assert disk_cfg.index, f"unexpected local disk index {disk_cfg}"
-            assert disk_cfg.nvme_id, f"unexpected local disk id {disk_cfg}"
-            assert not disk_cfg.extra, f"unexpected local disk extra {disk_cfg}"
-
-        for device_name in disk_info.nvme_local_disks_v1:
-            assert (
-                device_name in self.azure_nvme_id_disks
-            ), f"missing azure-nvme-id for {device_name}"
-            disk_cfg = self.azure_nvme_id_disks.get(device_name)
-            assert disk_cfg, f"failed to find azure-nvme-id for {device_name}"
-            assert disk_cfg.type == "local", f"unexpected disk type {disk_cfg}"
-            assert not disk_cfg.name, f"unexpected disk name {disk_cfg}"
-            assert not disk_cfg.index, f"unexpected disk index {disk_cfg}"
-            assert disk_cfg.nvme_id, f"unexpected disk id {disk_cfg}"
-            assert not disk_cfg.extra, f"unexpected disk extra {disk_cfg}"
-
-        for device_name in disk_info.nvme_remote_disks:
-            assert (
-                device_name in self.azure_nvme_id_disks
-            ), f"missing azure-nvme-id for {device_name}"
-            disk_cfg = self.azure_nvme_id_disks.get(device_name)
-            assert disk_cfg, f"failed to find azure-nvme-id for {device_name}"
-            assert disk_cfg.type in (
-                "os",
-                "data",
-            ), f"unexpected remote disk type {disk_cfg}"
-            if disk_cfg.type == "data":
-                assert disk_cfg.lun, f"unexpected remote disk index {disk_cfg}"
-            else:
-                assert not disk_cfg.lun, f"unexpected remote disk index {disk_cfg}"
-            assert not disk_cfg.name, f"unexpected remote disk name {disk_cfg}"
-            assert disk_cfg.nvme_id, f"unexpected remote disk id {disk_cfg}"
-            assert not disk_cfg.extra, f"unexpected remote disk extra {disk_cfg}"
-
-        logger.info("validate_azure_nvmve_id: OK")
+        self._validate_azure_nvme_disks(self.azure_nvme_id_disks, disk_info)
+        logger.info("validate_azure_nvmve_id OK: %r", self.azure_nvme_id_stdout)
 
     def validate_azure_nvme_id_help(self) -> None:
         """Validate azure-nvme-id --help outputs."""
@@ -572,6 +587,34 @@ class AzureNvmeIdInfo:
         ), "unexpected azure-nvme-id --help stdout: {self.azure_nvme_id_help_stdout}"
 
         logger.info("validate_azure_nvme_id_help OK: {self.azure_nvme_id_help_stdout}")
+
+    def validate_azure_nvme_id_json(self, disk_info: DiskInfo) -> None:
+        """Validate azure-nvme-id --format json outputs."""
+        assert self.azure_nvme_id_json_returncode == 0, "azure-nvme-id failed"
+        if not os.path.exists("/sys/class/nvme"):
+            assert (
+                self.azure_nvme_id_json_stderr
+                == "no NVMe devices in /sys/class/nvme: No such file or directory\n"
+            ), f"unexpected azure-nvme-id stderr without /sys/class/nvme: {self.azure_nvme_id_json_stderr}"
+        else:
+            assert (
+                self.azure_nvme_id_json_stderr == ""
+            ), f"unexpected azure-nvme-id stderr: {self.azure_nvme_id_json_stderr}"
+
+        self._validate_azure_nvme_disks(self.azure_nvme_id_disks, disk_info)
+
+        assert all(
+            disk.model
+            in (
+                "MSFT NVMe Accelerator v1.0",
+                "Microsoft NVMe Direct Disk",
+                "Microsoft NVMe Direct Disk v2",
+            )
+            for disk in self.azure_nvme_id_json_disks.values()
+        ), "missing model in azure-nvme-id --format json"
+        logger.info(
+            "validate_azure_nvmve_id_json OK: %r", self.azure_nvme_id_json_stdout
+        )
 
     def validate_azure_nvme_id_version(self) -> None:
         """Validate azure-nvme-id --version outputs."""
@@ -614,6 +657,7 @@ class AzureNvmeIdInfo:
         self.validate_azure_nvme_id_version()
         self.validate_azure_nvme_id_zzz_invalid_arg()
         self.validate_azure_nvme_id(disk_info)
+        self.validate_azure_nvme_id_json(disk_info)
 
     @classmethod
     def gather(cls) -> "AzureNvmeIdInfo":
@@ -622,6 +666,17 @@ class AzureNvmeIdInfo:
         azure_nvme_id_stdout = proc.stdout.decode("utf-8")
         azure_nvme_id_stderr = proc.stderr.decode("utf-8")
         azure_nvme_id_returncode = proc.returncode
+        azure_nvme_id_disks = cls.parse_azure_nvme_id_output(azure_nvme_id_stdout)
+
+        proc = subprocess.run(
+            ["azure-nvme-id", "--format", "json"], capture_output=True, check=False
+        )
+        azure_nvme_id_json_stdout = proc.stdout.decode("utf-8")
+        azure_nvme_id_json_stderr = proc.stderr.decode("utf-8")
+        azure_nvme_id_json_returncode = proc.returncode
+        azure_nvme_id_json_disks = cls.parse_azure_nvme_id_json_output(
+            azure_nvme_id_json_stdout
+        )
 
         proc = subprocess.run(
             ["azure-nvme-id", "--help"], capture_output=True, check=False
@@ -639,7 +694,6 @@ class AzureNvmeIdInfo:
         azure_nvme_id_version = cls.parse_azure_nvme_id_version(
             azure_nvme_id_version_stdout
         )
-        azure_nvme_id_disks = cls.parse_azure_nvme_id_output(azure_nvme_id_stdout)
 
         proc = subprocess.run(
             ["azure-nvme-id", "zzz"], capture_output=True, check=False
@@ -655,17 +709,75 @@ class AzureNvmeIdInfo:
             azure_nvme_id_help_stdout=azure_nvme_id_help_stdout,
             azure_nvme_id_help_stderr=azure_nvme_id_help_stderr,
             azure_nvme_id_help_returncode=azure_nvme_id_help_returncode,
+            azure_nvme_id_disks=azure_nvme_id_disks,
+            azure_nvme_id_json_stdout=azure_nvme_id_json_stdout,
+            azure_nvme_id_json_stderr=azure_nvme_id_json_stderr,
+            azure_nvme_id_json_returncode=azure_nvme_id_json_returncode,
+            azure_nvme_id_json_disks=azure_nvme_id_json_disks,
             azure_nvme_id_version_stdout=azure_nvme_id_version_stdout,
             azure_nvme_id_version_stderr=azure_nvme_id_version_stderr,
             azure_nvme_id_version_returncode=azure_nvme_id_version_returncode,
             azure_nvme_id_version=azure_nvme_id_version,
-            azure_nvme_id_disks=azure_nvme_id_disks,
             azure_nvme_id_zzz_returncode=azure_nvme_id_zzz_returncode,
             azure_nvme_id_zzz_stdout=azure_nvme_id_zzz_stdout,
             azure_nvme_id_zzz_stderr=azure_nvme_id_zzz_stderr,
         )
         logger.info("azure-nvme-id info: %r", azure_nvme_id_info)
         return azure_nvme_id_info
+
+    @staticmethod
+    def parse_azure_nvme_id_json_output(output: str) -> Dict[str, AzureNvmeIdDevice]:
+        """Parse azure-nvme-id --format json output.
+        Example output:
+        [
+            {
+                "path": "/dev/nvme0n33",
+                "model": "MSFT NVMe Accelerator v1.0",
+                "properties": {
+                    "type": "data",
+                    "lun": 31
+                },
+                "vs": ""
+            },
+            {
+                "path": "/dev/nvme1n1",
+                "model": "Microsoft NVMe Direct Disk v2",
+                "properties": {
+                    "type": "local",
+                    "index": 1,
+                    "name": "nvme-440G-1"
+                },
+                "vs": "type=local,index=1,name=nvme-440G-1"
+            }
+        ]
+        """
+        devices = {}
+
+        for device in json.loads(output):
+            device_path = device["path"]
+            model = device["model"]
+            properties = device["properties"]
+            device_type = properties.pop("type", None)
+            device_index = (
+                int(properties.pop("index")) if "index" in properties else None
+            )
+            device_lun = int(properties.pop("lun")) if "lun" in properties else None
+            device_name = properties.pop("name", None)
+            azure_nvme_id_device = AzureNvmeIdDevice(
+                device=device_path,
+                model=model,
+                nvme_id=",".join([f"{k}={v}" for k, v in properties.items()]),
+                type=device_type,
+                index=device_index,
+                lun=device_lun,
+                name=device_name,
+                extra=properties,
+            )
+
+            key = device_path.split("/")[-1]
+            devices[key] = azure_nvme_id_device
+
+        return devices
 
     @staticmethod
     def parse_azure_nvme_id_output(output: str) -> Dict[str, AzureNvmeIdDevice]:
@@ -700,10 +812,11 @@ class AzureNvmeIdInfo:
             device_index = (
                 int(properties.pop("index")) if "index" in properties else None
             )
-            device_lun = properties.pop("lun", None)
+            device_lun = int(properties.pop("lun")) if "lun" in properties else None
             device_name = properties.pop("name", None)
             azure_nvme_id_device = AzureNvmeIdDevice(
                 device=device,
+                model=None,
                 nvme_id=nvme_id,
                 type=device_type,
                 index=device_index,

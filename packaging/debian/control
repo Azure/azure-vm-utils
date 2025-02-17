@@ -2,7 +2,7 @@ Source: azure-vm-utils
 Section: utils
 Priority: optional
 Maintainer: Chris Patterson <cpatterson@microsoft.com>
-Build-Depends: cmake, pandoc, debhelper-compat (= 12), libcmocka-dev
+Build-Depends: cmake, pandoc, debhelper-compat (= 12), libcmocka-dev, libjson-c-dev
 Standards-Version: 4.5.0
 Homepage: https://github.com/Azure/azure-vm-utils
 Rules-Requires-Root: no

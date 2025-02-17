@@ -9,6 +9,7 @@ Source0:        %{name}_dev.tgz
 
 BuildRequires:  cmake
 BuildRequires:  gcc
+BuildRequires:  json-c-devel
 BuildRequires:  libcmocka-devel
 
 %description
