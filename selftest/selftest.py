@@ -6,7 +6,6 @@
 # --------------------------------------------------------------------------
 
 """Azure VM utilities self-tests script."""
-
 import argparse
 import glob
 import json
@@ -14,15 +13,16 @@ import logging
 import os
 import re
 import subprocess
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional
 
-import requests
-
 logger = logging.getLogger("selftest")
 
-
+# pylint: disable=broad-exception-caught
 # pylint: disable=line-too-long
+# pylint: disable=too-many-lines
 # pylint: disable=too-many-instance-attributes
 # pylint: disable=too-many-lines
 # pylint: disable=too-many-locals
@@ -212,17 +212,27 @@ def get_disk_size_gib(disk_path: str) -> int:
 
 
 def get_imds_metadata() -> Dict:
-    """Fetch IMDS metadata."""
+    """Fetch IMDS metadata using urllib."""
     url = "http://169.254.169.254/metadata/instance?api-version=2021-02-01"
     headers = {"Metadata": "true"}
+    timeout = 10  # Timeout in seconds
+
+    req = urllib.request.Request(url, headers=headers)
 
     try:
-        response = requests.get(url, headers=headers, timeout=60)
-        response.raise_for_status()
-        metadata = response.json()
-        logger.debug("fetched IMDS metadata: %r", metadata)
-        return metadata
-    except requests.RequestException as error:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            if response.status != 200:
+                raise urllib.error.HTTPError(
+                    url,
+                    response.status,
+                    "Failed to fetch metadata",
+                    response.headers,
+                    None,
+                )
+            metadata = json.load(response)
+            logger.debug("fetched IMDS metadata: %r", metadata)
+            return metadata
+    except urllib.error.URLError as error:
         logger.error("error fetching IMDS metadata: %r", error)
         raise
 
@@ -559,6 +569,8 @@ class AzureNvmeIdInfo:
             assert disk_cfg.nvme_id, f"unexpected remote disk id {disk_cfg}"
             assert not disk_cfg.extra, f"unexpected remote disk extra {disk_cfg}"
 
+        logger.info("validate_azure_nvme_id OK: %r", self.azure_nvme_id_disks)
+
     def validate_azure_nvme_id(self, disk_info: DiskInfo) -> None:
         """Validate azure-nvme-id outputs."""
         assert self.azure_nvme_id_returncode == 0, "azure-nvme-id failed"
@@ -580,13 +592,15 @@ class AzureNvmeIdInfo:
         assert self.azure_nvme_id_help_returncode == 0, "azure-nvme-id --help failed"
         assert (
             self.azure_nvme_id_help_stderr == ""
-        ), f"unexpected azure-nvme-id --help stderr: {self.azure_nvme_id_help_stderr}"
+        ), f"unexpected azure-nvme-id --help stderr: {self.azure_nvme_id_help_stderr!r}"
         assert (
             self.azure_nvme_id_help_stdout
             and self.azure_nvme_id_help_stdout.startswith("Usage: azure-nvme-id ")
-        ), "unexpected azure-nvme-id --help stdout: {self.azure_nvme_id_help_stdout}"
+        ), "unexpected azure-nvme-id --help stdout: {self.azure_nvme_id_help_stdout!r}"
 
-        logger.info("validate_azure_nvme_id_help OK: {self.azure_nvme_id_help_stdout}")
+        logger.info(
+            "validate_azure_nvme_id_help OK: %r", self.azure_nvme_id_help_stdout
+        )
 
     def validate_azure_nvme_id_json(self, disk_info: DiskInfo) -> None:
         """Validate azure-nvme-id --format json outputs."""
@@ -641,11 +655,11 @@ class AzureNvmeIdInfo:
         ), f"azure-nvme-id zzz rc={self.azure_nvme_id_zzz_returncode}"
         assert (
             self.azure_nvme_id_zzz_stderr == "invalid argument: zzz\n"
-        ), f"unexpected azure-nvme-id zzz stderr: {self.azure_nvme_id_zzz_stderr}"
+        ), f"unexpected azure-nvme-id zzz stderr: {self.azure_nvme_id_zzz_stderr!r}"
         assert (
             self.azure_nvme_id_zzz_stdout
             and self.azure_nvme_id_zzz_stdout.startswith("Usage: azure-nvme-id ")
-        ), (f"unexpected azure-nvme-id zzz stdout: {self.azure_nvme_id_zzz_stdout}")
+        ), (f"unexpected azure-nvme-id zzz stdout: {self.azure_nvme_id_zzz_stdout!r}")
 
         logger.info(
             "validate_azure_nvme_id_invalid_arg OK: %r", self.azure_nvme_id_zzz_stdout
@@ -843,10 +857,24 @@ class AzureNvmeIdInfo:
 class AzureVmUtilsValidator:
     """Validate Azure VM utilities."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        skip_imds_validation: bool = False,
+        skip_symlink_validation: bool = False,
+    ) -> None:
         self.azure_nvme_id_info = AzureNvmeIdInfo.gather()
         self.disk_info = DiskInfo.gather()
-        self.imds_metadata = get_imds_metadata()
+        self.skip_imds_validation = skip_imds_validation
+        self.skip_symlink_validation = skip_symlink_validation
+        try:
+            self.imds_metadata = get_imds_metadata()
+        except Exception as error:
+            logger.error("failed to fetch IMDS metadata: %r", error)
+            if not self.skip_imds_validation:
+                raise
+            self.imds_metadata = {}
+
         self.vm_size = self.imds_metadata.get("compute", {}).get("vmSize")
         self.sku_config = SKU_CONFIGS.get(self.vm_size)
 
@@ -1034,11 +1062,20 @@ class AzureVmUtilsValidator:
     def validate(self) -> None:
         """Run validations."""
         self.azure_nvme_id_info.validate(self.disk_info)
-        self.validate_dev_disk_azure_links_data()
-        self.validate_dev_disk_azure_links_local()
-        self.validate_dev_disk_azure_links_os()
-        self.validate_dev_disk_azure_links_resource()
-        self.validate_scsi_resource_disk()
+
+        if self.skip_symlink_validation:
+            logger.info("validate_dev_disk_azure_links_data SKIPPED")
+            logger.info("validate_dev_disk_azure_links_local SKIPPED")
+            logger.info("validate_dev_disk_azure_links_os SKIPPED")
+            logger.info("validate_dev_disk_azure_links_resource SKIPPED")
+            logger.info("validate_scsi_resource_disk SKIPPED")
+        else:
+            self.validate_dev_disk_azure_links_data()
+            self.validate_dev_disk_azure_links_local()
+            self.validate_dev_disk_azure_links_os()
+            self.validate_dev_disk_azure_links_resource()
+            self.validate_scsi_resource_disk()
+
         self.validate_sku_config()
         logger.info("success!")
 
@@ -1053,6 +1090,16 @@ def main() -> None:
         action="store_true",
         help="Enable debug logging",
     )
+    parser.add_argument(
+        "--skip-imds-validation",
+        action="store_true",
+        help="Skip imds validation (allow for running tests outside Azure VM)",
+    )
+    parser.add_argument(
+        "--skip-symlink-validation",
+        action="store_true",
+        help="Skip symlink validation (allow for running test without reboot after install)",
+    )
     args = parser.parse_args()
 
     if args.debug:
@@ -1060,7 +1107,10 @@ def main() -> None:
     else:
         logging.basicConfig(format="%(message)s", level=logging.INFO)
 
-    validator = AzureVmUtilsValidator()
+    validator = AzureVmUtilsValidator(
+        skip_imds_validation=args.skip_imds_validation,
+        skip_symlink_validation=args.skip_symlink_validation,
+    )
     validator.validate()
 
 

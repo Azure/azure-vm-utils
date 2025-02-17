@@ -32,8 +32,11 @@ jobs:
           id
           case "${{ matrix.container }}" in
             *almalinux/8*)
-              dnf install -y 'dnf-command(config-manager)'
+              dnf install -y 'dnf-command(config-manager)' epel-release
               dnf config-manager --set-enabled powertools
+              dnf install -y python39
+              alternatives --set python3 /usr/bin/python3.9
+              /usr/bin/env python3 --version
               ;;
             *almalinux/9*)
               dnf install -y 'dnf-command(config-manager)'
@@ -69,7 +72,10 @@ jobs:
           set -x
           rpm -qa azure-vm-utils
           test -f /usr/share/man/man8/azure-nvme-id.8.gz
-          test -f /usr/sbin/azure-nvme-id || test -f /usr/bin/azure-nvme-id
+          test -f /usr/share/man/man8/azure-vm-utils-selftest.8.gz
+          test -x /usr/sbin/azure-nvme-id || test -x /usr/bin/azure-nvme-id
+          test -x /usr/sbin/azure-vm-utils-selftest || test -x /usr/bin/azure-vm-utils-selftest
           test -f /usr/lib/dracut/modules.d/97azure-disk/module-setup.sh
           test -f /usr/lib/udev/rules.d/80-azure-disk.rules
           azure-nvme-id --version
+          azure-vm-utils-selftest --skip-imds-validation --skip-symlink-validation

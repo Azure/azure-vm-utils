@@ -20,6 +20,14 @@ BuildRequires:  make
 A collection of utilities and udev rules to make the most of the Linux
 experience on Azure.
 
+%package selftest
+Summary:        Self-test script for Azure VM Utils
+Requires:       %{name} = %{version}-%{release}
+Requires:       python3
+
+%description selftest
+This package contains the self-test script for the Azure VM Utils package.
+
 %prep
 %autosetup
 
@@ -38,3 +46,7 @@ experience on Azure.
 %{_libdir}/udev/rules.d/80-azure-disk.rules
 %{_sbindir}/azure-nvme-id
 %{_mandir}/man8/azure-nvme-id.8.gz
+
+%files selftest
+%{_sbindir}/azure-vm-utils-selftest
+%{_mandir}/man8/azure-vm-utils-selftest.8.gz

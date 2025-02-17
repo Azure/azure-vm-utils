@@ -43,4 +43,4 @@ rpmbuild -ba --define "__git_version ${version}" --define "__git_release ${relea
 # Copy RPM to output directory.
 mkdir -p "${output_dir}"
 rm -f "${output_dir}"/*.rpm
-cp -v "${build_dir}"/RPMS/*/"azure-vm-utils-${version}-${release}".*.rpm "${output_dir}"
+cp -v "${build_dir}"/RPMS/*/azure-vm-utils*"${version}-${release}"*.rpm "${output_dir}"
