@@ -13,9 +13,11 @@ import logging
 import os
 import re
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
 logger = logging.getLogger("selftest")
@@ -26,6 +28,8 @@ logger = logging.getLogger("selftest")
 # pylint: disable=too-many-instance-attributes
 # pylint: disable=too-many-lines
 # pylint: disable=too-many-locals
+
+SYS_CLASS_NET = "/sys/class/net"
 
 
 @dataclass(eq=True, repr=True)
@@ -215,26 +219,31 @@ def get_imds_metadata() -> Dict:
     """Fetch IMDS metadata using urllib."""
     url = "http://169.254.169.254/metadata/instance?api-version=2021-02-01"
     headers = {"Metadata": "true"}
-    timeout = 10  # Timeout in seconds
 
     req = urllib.request.Request(url, headers=headers)
 
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            if response.status != 200:
-                raise urllib.error.HTTPError(
-                    url,
-                    response.status,
-                    "Failed to fetch metadata",
-                    response.headers,
-                    None,
-                )
-            metadata = json.load(response)
-            logger.debug("fetched IMDS metadata: %r", metadata)
-            return metadata
-    except urllib.error.URLError as error:
-        logger.error("error fetching IMDS metadata: %r", error)
-        raise
+    last_error = None
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(req, timeout=60) as response:
+                if response.status != 200:
+                    raise urllib.error.HTTPError(
+                        url,
+                        response.status,
+                        "Failed to fetch metadata",
+                        response.headers,
+                        None,
+                    )
+                metadata = json.load(response)
+                logger.debug("fetched IMDS metadata: %r", metadata)
+                return metadata
+        except urllib.error.URLError as error:
+            last_error = error
+            logger.error("error fetching IMDS metadata: %r", error)
+            time.sleep(1)
+
+    raise RuntimeError(f"failed to fetch IMDS metadata: {last_error}")
 
 
 def get_local_nvme_disks() -> List[str]:
@@ -569,7 +578,7 @@ class AzureNvmeIdInfo:
             assert disk_cfg.nvme_id, f"unexpected remote disk id {disk_cfg}"
             assert not disk_cfg.extra, f"unexpected remote disk extra {disk_cfg}"
 
-        logger.info("validate_azure_nvme_id OK: %r", self.azure_nvme_id_disks)
+        logger.info("validate_azure_nvme_disks OK: %r", self.azure_nvme_id_disks)
 
     def validate_azure_nvme_id(self, disk_info: DiskInfo) -> None:
         """Validate azure-nvme-id outputs."""
@@ -854,6 +863,143 @@ class AzureNvmeIdInfo:
         return parts[1]
 
 
+@dataclass
+class NetworkInterface:
+    """Network interface."""
+
+    name: str
+    driver: str
+    mac: str
+    ipv4_addrs: List[str]
+    udev_properties: Dict[str, str]
+
+
+@dataclass(eq=True, repr=True)
+class NetworkInfo:
+    """Network information."""
+
+    interfaces: Dict[str, NetworkInterface] = field(default_factory=dict)
+
+    @classmethod
+    def enumerate_interfaces(cls) -> Dict[str, NetworkInterface]:
+        """Retrieve all Ethernet interfaces on the system."""
+        interfaces: Dict[str, NetworkInterface] = {}
+        interface_names = [
+            interface
+            for interface in os.listdir(SYS_CLASS_NET)
+            if os.path.exists(os.path.join(SYS_CLASS_NET, interface, "device"))
+        ]
+
+        for interface_name in interface_names:
+            sys_path = Path(SYS_CLASS_NET, interface_name)
+            properties = cls.query_udev_properties(interface_name)
+            driver_path = Path(sys_path, "device", "driver")
+            if not driver_path.is_symlink():
+                logger.debug(
+                    "ignoring interface %s without driver symlink", interface_name
+                )
+                continue
+
+            link = os.readlink(driver_path)
+            driver = os.path.basename(link)
+            mac = (sys_path / "address").read_text().strip()
+            ipv4_addrs = cls.get_ipv4_addresses(interface_name)
+            interfaces[interface_name] = NetworkInterface(
+                name=interface_name,
+                driver=driver,
+                mac=mac,
+                ipv4_addrs=ipv4_addrs,
+                udev_properties=properties,
+            )
+
+        return interfaces
+
+    @staticmethod
+    def get_ipv4_addresses(interface: str) -> List[str]:
+        """Get the IPv4 addresses of a given network interface using `ip addr`."""
+        try:
+            result = subprocess.run(
+                ["ip", "-4", "addr", "show", interface],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True,
+            )
+
+            ipv4_addresses = re.findall(r"inet (\d+\.\d+\.\d+\.\d+)", result.stdout)
+            return ipv4_addresses
+        except subprocess.CalledProcessError as error:
+            logger.error("failed to get IPv4 address for %s: %r", interface, error)
+            raise
+
+    @staticmethod
+    def query_udev_properties(interface: str) -> Dict[str, str]:
+        """Query all udev properties for a given interface using udevadm."""
+        try:
+            result = subprocess.run(
+                [
+                    "udevadm",
+                    "info",
+                    "--query=property",
+                    f"--path={SYS_CLASS_NET}/{interface}",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True,
+            )
+            properties: Dict[str, str] = {}
+            for line in result.stdout.splitlines():
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    properties[key] = value
+            return properties
+        except subprocess.CalledProcessError as e:
+            logger.error("Failed to query udev properties for %s: %r", interface, e)
+            return {}
+
+    def _validate_interface(self, interface: NetworkInterface) -> None:
+        """Ensure the required properties are set for hv_netvsc, mlx4, mlx5, and mana devices."""
+        if interface.driver in ["mlx4_core", "mlx5_core", "mana"]:
+            assert (
+                interface.udev_properties.get("NM_UNMANAGED") == "1"
+                and interface.udev_properties.get("AZURE_UNMANAGED_SRIOV") == "1"
+                and interface.udev_properties.get("ID_NET_MANAGED_BY") == "unmanaged"
+            ), f"missing required properties for network interface: {interface}"
+        elif interface.driver == "hv_netvsc":
+            assert (
+                "AZURE_UNMANAGED_SRIOV" not in interface.udev_properties
+            ), f"unexpected AZURE_UNMANAGED_SRIOV property: {interface}"
+            assert (
+                interface.udev_properties.get("ID_NET_MANAGED_BY") != "unmanaged"
+            ), f"hv_netvsc interface should be managed: {interface}"
+
+        mana_has_synthetic_netvsc = interface.driver == "mana" and any(
+            i.driver == "hv_netvsc" and i.mac == interface.mac
+            for i in self.interfaces.values()
+        )
+        if interface.driver == "hv_netvsc" or (
+            interface.driver == "mana" and not mana_has_synthetic_netvsc
+        ):
+            assert interface.ipv4_addrs, f"missing IPv4 addresses for {interface}"
+        else:
+            assert (
+                not interface.ipv4_addrs
+            ), f"unexpected IPv4 addresses for {interface}"
+
+        logger.info("validate_interface %s OK: %r", interface.name, interface)
+
+    def validate(self) -> None:
+        """Validate network configuration."""
+        for _, interface in self.interfaces.items():
+            self._validate_interface(interface)
+
+    @classmethod
+    def gather(cls) -> "NetworkInfo":
+        """Gather networking information."""
+        return NetworkInfo(interfaces=cls.enumerate_interfaces())
+
+
 class AzureVmUtilsValidator:
     """Validate Azure VM utilities."""
 
@@ -861,12 +1007,16 @@ class AzureVmUtilsValidator:
         self,
         *,
         skip_imds_validation: bool = False,
+        skip_network_validation: bool = False,
         skip_symlink_validation: bool = False,
     ) -> None:
         self.azure_nvme_id_info = AzureNvmeIdInfo.gather()
         self.disk_info = DiskInfo.gather()
+        self.net_info = NetworkInfo.gather()
         self.skip_imds_validation = skip_imds_validation
+        self.skip_network_validation = skip_network_validation
         self.skip_symlink_validation = skip_symlink_validation
+
         try:
             self.imds_metadata = get_imds_metadata()
         except Exception as error:
@@ -1002,6 +1152,11 @@ class AzureVmUtilsValidator:
 
         logger.info("validate_dev_disk_azure_links_resource OK: %r", resource_disk)
 
+    def validate_networking(self) -> None:
+        """Validate networking configuration."""
+        self.net_info.validate()
+        logger.info("validate_networking OK: %r", self.net_info)
+
     def validate_nvme_local_disks(self) -> None:
         """Validate NVMe local disks."""
         logger.info("validate_nvme_local_disks OK: %r", self.disk_info.nvme_local_disks)
@@ -1076,7 +1231,13 @@ class AzureVmUtilsValidator:
             self.validate_dev_disk_azure_links_resource()
             self.validate_scsi_resource_disk()
 
+        if self.skip_network_validation:
+            logger.info("validate_networking SKIPPED")
+        else:
+            self.validate_networking()
+
         self.validate_sku_config()
+
         logger.info("success!")
 
 
@@ -1096,6 +1257,11 @@ def main() -> None:
         help="Skip imds validation (allow for running tests outside Azure VM)",
     )
     parser.add_argument(
+        "--skip-network-validation",
+        action="store_true",
+        help="Skip network validation (allow for running test without reboot after install)",
+    )
+    parser.add_argument(
         "--skip-symlink-validation",
         action="store_true",
         help="Skip symlink validation (allow for running test without reboot after install)",
@@ -1103,12 +1269,13 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.debug:
-        logging.basicConfig(format="%(message)s", level=logging.DEBUG)
+        logging.basicConfig(format="[%(asctime)s] %(message)s", level=logging.DEBUG)
     else:
-        logging.basicConfig(format="%(message)s", level=logging.INFO)
+        logging.basicConfig(format="[%(asctime)s] %(message)s", level=logging.INFO)
 
     validator = AzureVmUtilsValidator(
         skip_imds_validation=args.skip_imds_validation,
+        skip_network_validation=args.skip_network_validation,
         skip_symlink_validation=args.skip_symlink_validation,
     )
     validator.validate()
