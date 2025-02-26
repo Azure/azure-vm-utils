@@ -292,7 +292,7 @@ bool initialize_nvme_controller(struct nvme_controller *ctrl, const char *name)
  */
 int identify_disks(struct context *ctx)
 {
-    struct dirent **namelist;
+    struct dirent **namelist = NULL;
     json_object *namespaces_array = json_object_new_array();
 
     int n = scandir(SYS_CLASS_NVME_PATH, &namelist, is_azure_nvme_controller, versionsort);
