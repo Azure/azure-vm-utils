@@ -87,8 +87,8 @@ int __wrap_ioctl(int fd, unsigned long request, ...)
     struct nvme_id_ns *ns = mock_type(struct nvme_id_ns *);
     if (ns != NULL)
     {
-        memcpy((void *)cmd->addr, ns, sizeof(struct nvme_id_ns));
-        ns = (struct nvme_id_ns *)cmd->addr;
+        memcpy((void *)(uintptr_t)cmd->addr, ns, sizeof(*ns));
+        ns = (struct nvme_id_ns *)(uintptr_t)cmd->addr;
     }
 
     int ret = mock_type(int);
