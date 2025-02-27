@@ -1,54 +1,77 @@
-.TH "azure\-nvme\-id" "8" "@TODAY@" "azure-nvme-id\ @VERSION@" "User Manual"
+.TH "azure-nvme-id" "8" "February\ 27,\ 2025" "azure-nvme-id @VERSION@" "User Manual"
+.hy
 .SH NAME
-azure\-nvme\-id \- Identify Azure NVMe devices.
-.SH SYNOPSIS
-\f[B]azure\-nvme\-id\f[R] [\-\-debug] [\-\-help | \-\-version |
-\-\-udev]
-.SH DESCRIPTION
-\f[B]azure\-nvme\-id\f[R] is a utility to identify Azure NVMe devices.
 .PP
-It performs an Identify Namespace command on the NVMe namespaces,
-parsing metadata available in the vendor\-specific (vs) field which
-contains various identification details with a comma\-separated,
-key=value format.
+azure-nvme-id - identify Azure NVMe devices
+.SH SYNOPSIS
+.PP
+\f[B]azure-nvme-id\f[R] [--debug] [--format {plain|json}] [--help |
+--version | --udev]
+.SH DESCRIPTION
+.PP
+\f[B]azure-nvme-id\f[R] provides identification metadata in the response
+to Identify Namespace command for some models of NVMe devices.
+This is found in vendor-specific (vs) field which contains various
+identification details with a comma-separated, key=value format.
+.PP
+\f[B]azure-nvme-id\f[R] combines this metadata with the make and model
+of NVMe device namespaces to identify a device by type, name, index,
+etc.
+Output options are plain or json.
+.PP
+To suppoort udev rules, --udev option will invoke
+\f[B]azure-nvme-id\f[R] in udev mode.
 .SH OPTIONS
 .TP
-\f[CR]\-\-help\f[R]
+\f[B]\f[CB]--debug\f[B]\f[R]
+Debug mode with additional logging.
+.TP
+\f[B]\f[CB]--format {plain|json}\f[B]\f[R]
+Output format, default is plain.
+.TP
+\f[B]\f[CB]--help\f[B]\f[R]
 Show usage information and exit.
 .TP
-\f[CR]\-\-version\f[R]
-Show version information and exit.
-.TP
-\f[CR]\-\-udev\f[R]
+\f[B]\f[CB]--udev\f[B]\f[R]
 Run in udev mode, printing a set of \f[CR]<key>=<value>\f[R] variables
 consumed by udev rules.
 Requires DEVNAME to be set in environment.
+.TP
+\f[B]\f[CB]--version\f[B]\f[R]
+Show version information and exit.
 .SH EXAMPLES
+.PP
 Identify NVMe namespaces:
 .IP
-.EX
-$ sudo azure\-nvme\-id
+.nf
+\f[CR]
+$ sudo azure-nvme-id
 /dev/nvme0n1:
-/dev/nvme1n1: type=local,index=1,name=nvme\-110G\-1
-.EE
+/dev/nvme1n1: type=local,index=1,name=nvme-110G-1
+\f[R]
+.fi
 .PP
 Parse device identifiers for udev consumption:
 .IP
-.EX
-$ sudo env DEVNAME=/dev/nvme1n1 azure\-nvme\-id \-\-udev
-AZURE_DISK_VS=type=local,index=1,name=nvme\-110G\-1
+.nf
+\f[CR]
+$ sudo env DEVNAME=/dev/nvme1n1 azure-nvme-id --udev
+AZURE_DISK_VS=type=local,index=1,name=nvme-110G-1
 AZURE_DISK_TYPE=local
 AZURE_DISK_INDEX=1
-AZURE_DISK_NAME=nvme\-110G\-1
-.EE
+AZURE_DISK_NAME=nvme-110G-1
+\f[R]
+.fi
 .PP
-Check \f[CR]azure\-nvme\-id\f[R] version:
+Check \f[CR]azure-nvme-id\f[R] version:
 .IP
-.EX
-$ azure\-nvme\-id \-\-version
-azure\-nvme\-id 0.1.2
-.EE
+.nf
+\f[CR]
+$ azure-nvme-id --version
+azure-nvme-id 0.1.2
+\f[R]
+.fi
 .SH SEE ALSO
-Source and documentation available at: \c
-.UR https://github.com/Azure/azure-vm-utils
-.UE \c
+.PP
+Source and documentation available at:
+<https://github.com/Azure/azure-vm-utils>

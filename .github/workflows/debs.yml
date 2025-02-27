@@ -34,7 +34,7 @@ jobs:
         ./scripts/build-deb.sh
     - name: Lintian check
       run: |
-        lintian out/*.deb
+        lintian --fail-on error,warning out/*.deb
     - name: Install debs
       run: |
         sudo dpkg -i out/*.deb

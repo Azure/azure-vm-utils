@@ -1,46 +1,38 @@
-string(TIMESTAMP TODAY "%B %d, %Y")
-
-option(GENERATE_MANPAGES "Generate manpages with pandoc" OFF)
-
 function(generate_manpage manpage_name)
-    set(manpage_md "${CMAKE_SOURCE_DIR}/doc/${manpage_name}.md")
+    set(manpage_in "${CMAKE_SOURCE_DIR}/doc/${manpage_name}.8.in")
     set(manpage_output "${CMAKE_CURRENT_BINARY_DIR}/doc/${manpage_name}.8")
 
-    if(GENERATE_MANPAGES)
-        find_program(PANDOC_EXECUTABLE pandoc)
-        if(NOT PANDOC_EXECUTABLE)
-            message(WARNING "Pandoc not found, will not generate manpages")
-            return()
-        endif()
-
-        add_custom_command(
-            OUTPUT ${manpage_output}
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/doc
-            COMMAND ${PANDOC_EXECUTABLE}
-                ${manpage_md}
-                --standalone --from markdown --to man
-                --variable footer="${manpage_name} ${VERSION}"
-                --variable date="${TODAY}"
-                -o ${manpage_output}
-            DEPENDS ${manpage_md}
-            COMMENT "Generating manpage for ${manpage_name}"
-        )
-    else()
-        configure_file(
-            "${CMAKE_SOURCE_DIR}/doc/${manpage_name}.8.in"
-            "${manpage_output}"
-            @ONLY
-        )
-    endif()
+    configure_file(
+        "${manpage_in}"
+        "${manpage_output}"
+        @ONLY
+    )
 
     set(MANPAGES_OUTPUT ${MANPAGES_OUTPUT} ${manpage_output} PARENT_SCOPE)
 endfunction()
+
+string(TIMESTAMP TODAY "%B %d, %Y")
+set(PANDOC_GENERATE_COMMAND
+    pandoc --standalone --from markdown --to man
+    --template "${CMAKE_SOURCE_DIR}/doc/pandoc.template"
+    --variable footer="${manpage_name} ${VERSION}"
+    --variable date="${TODAY}"
+)
+set(PANDOC_FIXUPS_COMMAND sed -i 's/f\\[C]/f[CR]/g')
+
+add_custom_target(
+    generate-manpages
+    COMMAND ${PANDOC_GENERATE_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-nvme-id.md" -o ${CMAKE_SOURCE_DIR}/doc/azure-nvme-id.8.in
+    COMMAND ${PANDOC_FIXUPS_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-nvme-id.8.in"
+    COMMAND ${PANDOC_GENERATE_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-vm-utils-selftest.md" -o ${CMAKE_SOURCE_DIR}/doc/azure-vm-utils-selftest.8.in
+    COMMAND ${PANDOC_FIXUPS_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-vm-utils-selftest.8.in"
+)
 
 generate_manpage("azure-nvme-id")
 generate_manpage("azure-vm-utils-selftest")
 
 add_custom_target(
-    doc ALL
+    doc
     DEPENDS ${MANPAGES_OUTPUT}
 )
 

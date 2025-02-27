@@ -1,15 +1,16 @@
-.TH "azure-vm-utils-selftest" "8" "@TODAY@" "azure-vm-utils-selftest\ @VERSION@" "User Manual"
+.TH "azure-vm-utils-selftest" "8" "February\ 27,\ 2025" "azure-vm-utils-selftest @VERSION@" "User Manual"
+.hy
 .SH NAME
 .PP
-azure-vm-utils-selftest - Self-tests for azure-vm-utils package.
+azure-vm-utils-selftest - packaging self-tests
 .SH SYNOPSIS
 .PP
-\f[B]azure-vm-utils-selftest\f[R] [\[en]skip-imds-validation]
-[\[en]skip-symlink-validation]
+\f[B]azure-vm-utils-selftest [--skip-imds-validation]
+[--skip-symlink-validation]\f[R]
 .SH DESCRIPTION
 .PP
-\f[B]azure-vm-utils-selftest\f[R] is a utility to identify Azure NVMe
-devices.
+\f[B]azure-vm-utils-selftest\f[R] validates functionailty related to
+azure-vm-utils package.
 .PP
 These self-tests validate azure-nvme-id outputs and /dev/disk/azure
 symlinks.
@@ -18,7 +19,7 @@ symlinks.
 Running self tests requires root:
 .IP
 .nf
-\f[C]
+\f[CR]
 $ sudo azure-vm-utils-selftest
 \f[R]
 .fi
@@ -26,7 +27,7 @@ $ sudo azure-vm-utils-selftest
 To run inside Azure VM without a reboot after install:
 .IP
 .nf
-\f[C]
+\f[CR]
 azure-vm-utils-selftest --skip-symlink-validation
 \f[R]
 .fi
@@ -34,7 +35,7 @@ azure-vm-utils-selftest --skip-symlink-validation
 To run outside of Azure VM:
 .IP
 .nf
-\f[C]
+\f[CR]
 azure-vm-utils-selftest --skip-imds-validation --skip-symlink-validation
 \f[R]
 .fi
