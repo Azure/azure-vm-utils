@@ -355,6 +355,18 @@ static void test_identify_disks_no_sys_class_nvme_present(void **state)
     assert_string_equal(capture_stdout(), "");
 }
 
+static void test_identify_disks_sys_class_nvme_empty(void **state)
+{
+    (void)state; // Unused parameter
+
+    struct context ctx = {.output_format = PLAIN};
+    int result = identify_disks(&ctx);
+
+    assert_int_equal(result, 0);
+    assert_string_equal(capture_stderr(), "");
+    assert_string_equal(capture_stdout(), "");
+}
+
 static void test_identify_disks(void **state)
 {
     struct
@@ -542,6 +554,7 @@ int main(void)
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_trim_trailing_whitespace),
         cmocka_unit_test_setup_teardown(test_identify_disks_no_sys_class_nvme_present, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_disks_sys_class_nvme_empty, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_combined, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_combined_json, setup, teardown),
