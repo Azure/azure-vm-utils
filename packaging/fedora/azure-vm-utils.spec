@@ -47,6 +47,9 @@ This package contains the self-test script for the Azure VM Utils package.
 
 %files
 %{_exec_prefix}/lib/dracut/modules.d/97azure-disk/module-setup.sh
+%{_exec_prefix}/lib/dracut/modules.d/97azure-unmanaged-sriov/module-setup.sh
+%{_exec_prefix}/lib/systemd/network/10-azure-unmanaged-sriov.network
+%{_exec_prefix}/lib/udev/rules.d/10-azure-unmanaged-sriov.rules
 %{_exec_prefix}/lib/udev/rules.d/80-azure-disk.rules
 %{_sbindir}/azure-nvme-id
 %{_mandir}/man8/azure-nvme-id.8.gz

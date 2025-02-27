@@ -1,0 +1,25 @@
+#!/bin/sh
+
+PREREQ="udev"
+
+prereqs()
+{
+    echo "${PREREQ}"
+}
+
+case $1 in
+prereqs)
+    prereqs
+    exit 0
+    ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+DESTINATION="${DESTDIR}/lib/udev/rules.d/"
+RULES_FILE="/usr/lib/udev/rules.d/10-azure-unmanaged-sriov.rules"
+
+if [ -e "${RULES_FILE}" ]; then
+    mkdir -p "${DESTINATION}"
+    cp -p "${RULES_FILE}" "${DESTINATION}"
+fi
