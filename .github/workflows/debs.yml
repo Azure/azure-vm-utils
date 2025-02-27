@@ -3,11 +3,16 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04]
+        container:
+          - ubuntu:20.04
+          - ubuntu:22.04
+          - ubuntu:24.04
+          - debian:12
+          - debian:sid
     defaults:
       run:
         shell: bash
@@ -26,7 +31,7 @@ jobs:
         git fetch upstream --tags
     - name: Build debs
       run: |
-        DEBEMAIL="Azure VM Utils CI <azure/azure-vm-utils@github.com>" ./scripts/build-deb.sh
+        ./scripts/build-deb.sh
     - name: Lintian check
       run: |
         lintian out/*.deb

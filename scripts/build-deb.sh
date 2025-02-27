@@ -2,9 +2,15 @@
 
 set -eux -o pipefail
 
+if [[ $UID -ne 0 ]]; then
+    sudo_cmd="sudo"
+else
+    sudo_cmd=""
+fi
+
 # Ensure dependencies are installed and up-to-date.
-sudo apt update
-sudo apt install -y \
+$sudo_cmd apt update
+$sudo_cmd apt install -y \
         build-essential \
         clang-format \
         cmake \
@@ -12,10 +18,12 @@ sudo apt install -y \
         devscripts \
         debhelper \
         gcc \
+        initramfs-tools \
         libcmocka-dev \
         libjson-c-dev \
         pandoc \
-        pkg-config
+        pkg-config \
+        rsync
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 git_version="$(git describe --tags --always --dirty)"
@@ -32,8 +40,8 @@ rsync -a packaging/debian/. debian/.
 
 rm -f debian/changelog
 if [[ -z ${DEBEMAIL:-} ]]; then
-    git_user="$(git config user.name)"
-    git_email="$(git config user.email)"
+    git_user="$(git config user.name || echo Azure VM Utils CI)"
+    git_email="$(git config user.email || echo azure/azure-vm-utils@github.com)"
     export DEBEMAIL="${git_user} <${git_email}>"
 fi
 dch --create -v "${deb_version}" --package "azure-vm-utils" "development build: ${git_version}"
