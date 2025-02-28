@@ -1,8 +1,8 @@
 Source: azure-vm-utils
-Section: utils
+Section: admin
 Priority: optional
 Maintainer: Chris Patterson <cpatterson@microsoft.com>
-Build-Depends: cmake, pandoc, debhelper-compat (= 12), libcmocka-dev, libjson-c-dev, python3
+Build-Depends: cmake, debhelper-compat (= 12), pkgconf, libcmocka-dev, libjson-c-dev, python3
 Standards-Version: 4.5.0
 Homepage: https://github.com/Azure/azure-vm-utils
 Rules-Requires-Root: no
@@ -11,12 +11,13 @@ Package: azure-vm-utils
 Architecture: any
 Multi-Arch: foreign
 Depends: ${misc:Depends}, ${shlibs:Depends}
-Description: A collection of utilities and udev rules to make the most of the
- Linux experience on Azure.
+Description: Core utilities and configuration for Linux VMs on Azure
+ This package provides a home for core utilities, udev rules and other
+ configuration to support Linux VMs on Azure.
 
 Package: azure-vm-utils-selftest
 Architecture: all
 Multi-Arch: foreign
 Depends: ${misc:Depends}, python3, azure-vm-utils (= ${binary:Version})
 Description: Self-test script for Azure VM Utils
- This package contains the self-test script for the Azure VM Utils package.
+ Test script for maintainer sanity checks in various environments.
