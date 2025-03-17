@@ -55,8 +55,16 @@ struct nvme_id_ns *nvme_identify_namespace(const char *device_path, int nsid)
         return NULL;
     }
 
+    long pagesize = sysconf(_SC_PAGESIZE);
+    if (pagesize < 0)
+    {
+        fprintf(stderr, "failed sysconf: %m\n");
+        close(fd);
+        return NULL;
+    }
+
     struct nvme_id_ns *ns = NULL;
-    if (posix_memalign((void **)&ns, sysconf(_SC_PAGESIZE), sizeof(struct nvme_id_ns)) != 0)
+    if (posix_memalign((void **)&ns, pagesize, sizeof(struct nvme_id_ns)) != 0)
     {
         fprintf(stderr, "failed posix_memalign for %s: %m\n", device_path);
         close(fd);
