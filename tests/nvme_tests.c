@@ -46,6 +46,14 @@ int __wrap_open(const char *pathname, int flags, ...)
     return ret;
 }
 
+/**
+ * Redirect open64 to open for platforms that use it, e.g. armhf.
+ */
+int __wrap_open64(const char *pathname, int flags, ...)
+{
+    return __wrap_open(pathname, flags);
+}
+
 int __wrap_posix_memalign(void **memptr, size_t alignment, size_t size)
 {
     check_expected(memptr);
@@ -87,8 +95,8 @@ int __wrap_ioctl(int fd, unsigned long request, ...)
     struct nvme_id_ns *ns = mock_type(struct nvme_id_ns *);
     if (ns != NULL)
     {
-        memcpy((void *)cmd->addr, ns, sizeof(struct nvme_id_ns));
-        ns = (struct nvme_id_ns *)cmd->addr;
+        memcpy((void *)(uintptr_t)cmd->addr, ns, sizeof(*ns));
+        ns = (struct nvme_id_ns *)(uintptr_t)cmd->addr;
     }
 
     int ret = mock_type(int);
@@ -98,6 +106,19 @@ int __wrap_ioctl(int fd, unsigned long request, ...)
     }
 
     return ret;
+}
+
+/**
+ * Redirect __ioctl_time64 to ioctl for platforms that use it, e.g. armhf.
+ */
+int __wrap___ioctl_time64(int fd, unsigned long request, ...)
+{
+    va_list args;
+    va_start(args, request);
+    void *arg = va_arg(args, void *);
+    va_end(args);
+
+    return __wrap_ioctl(fd, request, arg);
 }
 
 int __wrap_close(int fd)

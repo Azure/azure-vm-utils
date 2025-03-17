@@ -8,15 +8,15 @@ date: __DATE__
 
 # NAME
 
-azure-vm-utils-selftest - Self-tests for azure-vm-utils package.
+azure-vm-utils-selftest - packaging self-tests
 
 # SYNOPSIS
 
-**azure-vm-utils-selftest** [--skip-imds-validation] [--skip-symlink-validation]
+**azure-vm-utils-selftest [\-\-skip-imds-validation] [\-\-skip-symlink-validation]**
 
 # DESCRIPTION
 
-**azure-vm-utils-selftest** is a utility to identify Azure NVMe devices.
+**azure-vm-utils-selftest** validates functionailty related to azure-vm-utils package.
 
 These self-tests validate azure\-nvme\-id outputs and /dev/disk/azure symlinks.
 
