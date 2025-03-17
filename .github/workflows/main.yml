@@ -35,11 +35,16 @@ jobs:
         sudo make -C build install
     - name: Verify installation
       run: |
+        set -x
+        test -f /usr/local/lib/systemd/network/10-azure-unmanaged-sriov.network
+        test -f /usr/local/lib/udev/rules.d/10-azure-unmanaged-sriov.rules
+        test -f /usr/local/lib/udev/rules.d/80-azure-disk.rules
         test -x /usr/local/sbin/azure-nvme-id
         test -x /usr/local/sbin/azure-vm-utils-selftest
+        test -f /usr/local/share/initramfs-tools/hooks/azure-disk
+        test -f /usr/local/share/initramfs-tools/hooks/azure-unmanaged-sriov
         test -f /usr/local/share/man/man8/azure-nvme-id.8
         test -f /usr/local/share/man/man8/azure-vm-utils-selftest.8
-        test -f /usr/local/lib/udev/rules.d/80-azure-disk.rules
         azure-nvme-id --version
         azure-vm-utils-selftest --skip-imds-validation --skip-symlink-validation
     - name: Verify manpages can be generated
