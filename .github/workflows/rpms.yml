@@ -10,6 +10,8 @@ jobs:
       matrix:
         container:
           - fedora:41
+          - fedora:42
+          - fedora:rawhide
           - ghcr.io/almalinux/9-base:latest
           - ghcr.io/almalinux/8-base:latest
           - mcr.microsoft.com/cbl-mariner/base/core:2.0
@@ -45,6 +47,9 @@ jobs:
             *azurelinux*|*cbl-mariner*)
               export HOME=/root # tdnf requires HOME to be set to /root
               tdnf install -y awk ca-certificates dnf --verbose
+              ;;
+            *fedora*)
+              dnf install -y awk
               ;;
           esac
           dnf install -y git sudo

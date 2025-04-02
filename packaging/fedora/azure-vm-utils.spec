@@ -32,7 +32,7 @@ This package contains the self-test script for the Azure VM Utils package.
 %autosetup
 
 %build
-%cmake -DVERSION="%{version}-%{release}"
+%cmake -DVERSION="%{version}-%{release}" -DAZURE_NVME_ID_INSTALL_DIR="%{_bindir}"
 %cmake_build
 
 %install
@@ -51,11 +51,11 @@ This package contains the self-test script for the Azure VM Utils package.
 %{_exec_prefix}/lib/systemd/network/10-azure-unmanaged-sriov.network
 %{_exec_prefix}/lib/udev/rules.d/10-azure-unmanaged-sriov.rules
 %{_exec_prefix}/lib/udev/rules.d/80-azure-disk.rules
-%{_sbindir}/azure-nvme-id
+%{_bindir}/azure-nvme-id
 %{_mandir}/man8/azure-nvme-id.8.gz
 
 %files selftest
-%{_sbindir}/azure-vm-utils-selftest
+%{_bindir}/azure-vm-utils-selftest
 %{_mandir}/man8/azure-vm-utils-selftest.8.gz
 
 %changelog
