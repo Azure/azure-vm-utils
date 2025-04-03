@@ -94,32 +94,43 @@ and ssh into them to run the tests.
 To run tests against marketplace and community images with azure-vm-utils:
 
 ```
-AZURE_SUBSCRIPTION=<subscription id> \
-AZURE_LOCATION=eastus2 \
+SELFTEST_AZURE_SUBSCRIPTION=<subscription id> \
+SELFTEST_AZURE_LOCATION=eastus2 \
 pytest -v selftest
 ```
 
-To run tests for custom images and vm sizes, test_custom() is provided and can be configured via environment.
-TEST_CUSTOM_IMAGES and TEST_CUSTOM_VM_SIZES are comma-separated so multiple may be tested at a time.
+To run tests for custom images and vm sizes, the following variables are supported with comma-separated values:
+
+- SELFTEST_ARM64_IMAGES
+- SELFTEST_ARM64_VM_SIZES
+- SELFTEST_GEN1_IMAGES
+- SELFTEST_GEN1_VM_SIZES
+- SELFTEST_GEN2_IMAGES
+- SELFTEST_GEN2_VM_SIZES
 
 For example:
 
 ```
-AZURE_SUBSCRIPTION=<subscription id> \
-AZURE_LOCATION=eastus2 \
-TEST_CUSTOM_IMAGES=/my/image1,/my/image2,... \
-TEST_CUSTOM_VM_SIZES=Standard_D2ds_v5,Standard_D2ds_v6,... \
-pytest -v -k test_custom
+SELFTEST_AZURE_SUBSCRIPTION=<subscription id> \
+SELFTEST_AZURE_LOCATION=eastus2 \
+SELFTEST_GEN2_IMAGES=/my/image1,/my/image2,... \
+SELFTEST_GEN2_VM_SIZES=Standard_D2ds_v5,Standard_D2ds_v6,... \
+pytest -xvvvs -k test_gen2
 ```
 
-For convenience, the default spread of VM sizes can be re-used for custom tests by setting one of the
-following that are appropriate for the image(s) under test:
+For convenience, the default spread of VM sizes is assumed if SELFTEST_{ARM64|GEN1|GEN2}_VM_SIZES is unset.
+If unable to allocate VM, test is "skipped".
 
-```
-TEST_CUSTOM_VM_SIZES=DEFAULT_GEN1_VM_SIZES
-TEST_CUSTOM_VM_SIZES=DEFAULT_GEN2_VM_SIZES
-TEST_CUSTOM_VM_SIZES=DEFAULT_ARM64_VM_SIZES
-```
+Supported environment variables:
+
+- SELFTEST_ADMIN_USERNAME: admin name to configure VMs with
+- SELFTEST_ADMIN_PASSWORD: optional password to enable easy serial-console access
+- SELFTEST_ARTIFACTS_PATH: directory path to store artifacts under
+- SELFTEST_AZURE_LOCATION: location to use
+- SELFTEST_AZURE_SUBSCRIPTION: subscription to use
+- SELFTEST_HOLD_FAILURES: skip cleanup for failures
+- SELFTEST_REBOOTS: number of reboots to perform in test (default=50)
+- SELFTEST_RESOURCE_GROUP: optional RG to use, otherwise one is created
 
 # Contributing
 
