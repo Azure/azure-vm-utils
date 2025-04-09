@@ -892,7 +892,7 @@ class NetworkInfo:
 
         for interface_name in interface_names:
             sys_path = Path(SYS_CLASS_NET, interface_name)
-            properties = cls.query_udev_properties(interface_name)
+            udev_properties = cls.query_udev_properties(interface_name)
             driver_path = Path(sys_path, "device", "driver")
             if not driver_path.is_symlink():
                 logger.debug(
@@ -909,7 +909,7 @@ class NetworkInfo:
                 driver=driver,
                 mac=mac,
                 ipv4_addrs=ipv4_addrs,
-                udev_properties=properties,
+                udev_properties=udev_properties,
             )
 
         return interfaces
