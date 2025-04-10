@@ -101,9 +101,25 @@ SKU_CONFIGS = {
         nvme_controller_toggle_supported=True,
         temp_disk_size_gib=75,
     ),
-    "Standard_D2as_v6": V6SkuConfig(vm_size="Standard_D2als_v6"),
+    "Standard_D2s_v6": V6SkuConfig(vm_size="Standard_D2s_v6"),
+    "Standard_D2ds_v6": V6SkuConfig(
+        vm_size="Standard_D2ds_v6",
+        nvme_local_disk_count=1,
+        nvme_local_disk_size_gib=110,
+    ),
+    "Standard_D16ds_v6": V6SkuConfig(
+        vm_size="Standard_D16ds_v6",
+        nvme_local_disk_count=2,
+        nvme_local_disk_size_gib=440,
+    ),
+    "Standard_D32ds_v6": V6SkuConfig(
+        vm_size="Standard_D32ds_v6",
+        nvme_local_disk_count=4,
+        nvme_local_disk_size_gib=440,
+    ),
+    "Standard_D2as_v6": V6SkuConfig(vm_size="Standard_D2as_v6"),
     "Standard_D2ads_v6": V6SkuConfig(
-        vm_size="Standard_D2alds_v6",
+        vm_size="Standard_D2ads_v6",
         nvme_local_disk_count=1,
         nvme_local_disk_size_gib=110,
     ),
