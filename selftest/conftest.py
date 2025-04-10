@@ -16,6 +16,9 @@ import pytest
 logger = logging.getLogger(__name__)
 
 
+# pylint: disable=unused-argument
+
+
 def pytest_sessionstart(session):
     """Initialize session attributes that are marked on finish."""
     session.aborted = False
@@ -30,7 +33,7 @@ def pytest_sessionfinish(session, exitstatus):
         session.failed = True
 
 
-def pytest_configure(_config):
+def pytest_configure(config):
     """Configure pytest logging and artifacts directory.
 
     Create artifacts directory based on the current timestamp if not configured.
@@ -68,7 +71,7 @@ def pytest_configure(_config):
 
 
 @pytest.hookimpl(tryfirst=True)
-def pytest_collection_modifyitems(_config, items):
+def pytest_collection_modifyitems(config, items):
     """Group tests by vm_size for pytest-xdist to avoid quota issues."""
     for item in items:
         vm_size = (
