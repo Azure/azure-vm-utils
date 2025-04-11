@@ -81,9 +81,9 @@ GEN2_IMAGES = [
 ]
 if not GEN2_IMAGES:
     GEN2_IMAGES = [
-        "debian:debian-13-daily:13-arm64:latest",
-        "debian:debian-sid-daily:sid-arm64:latest",
-        "/CommunityGalleries/Fedora-5e266ba4-2250-406d-adad-5d73860d958f/Images/Fedora-Cloud-Rawhide-Arm64/versions/latest",
+        "debian:debian-13-daily:13-gen2:latest",
+        "debian:debian-sid-daily:sid-gen2:latest",
+        "/CommunityGalleries/Fedora-5e266ba4-2250-406d-adad-5d73860d958f/Images/Fedora-Cloud-Rawhide-x64/versions/latest",
     ]
 GEN2_VM_SIZES = [
     vm_size for vm_size in os.getenv("SELFTEST_GEN2_VM_SIZES", "").split(",") if vm_size
