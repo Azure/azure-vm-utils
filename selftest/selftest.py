@@ -970,8 +970,8 @@ class NetworkInfo:
                     key, value = line.split("=", 1)
                     properties[key] = value
             return properties
-        except subprocess.CalledProcessError as e:
-            logger.error("Failed to query udev properties for %s: %r", interface, e)
+        except subprocess.CalledProcessError as error:
+            logger.error("Failed to query udev properties for %s: %r", interface, error)
             return {}
 
     def _validate_interface(self, interface: NetworkInterface) -> None:
