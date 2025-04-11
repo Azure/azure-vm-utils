@@ -931,11 +931,11 @@ class NetworkInfo:
         return interfaces
 
     @staticmethod
-    def get_ipv4_addresses(interface: str) -> List[str]:
+    def get_ipv4_addresses(interface_name: str) -> List[str]:
         """Get the IPv4 addresses of a given network interface using `ip addr`."""
         try:
             result = subprocess.run(
-                ["ip", "-4", "addr", "show", interface],
+                ["ip", "-4", "addr", "show", interface_name],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -945,11 +945,11 @@ class NetworkInfo:
             ipv4_addresses = re.findall(r"inet (\d+\.\d+\.\d+\.\d+)", result.stdout)
             return ipv4_addresses
         except subprocess.CalledProcessError as error:
-            logger.error("failed to get IPv4 address for %s: %r", interface, error)
+            logger.error("failed to get IPv4 address for %s: %r", interface_name, error)
             raise
 
     @staticmethod
-    def query_udev_properties(interface: str) -> Dict[str, str]:
+    def query_udev_properties(interface_name: str) -> Dict[str, str]:
         """Query all udev properties for a given interface using udevadm."""
         try:
             result = subprocess.run(
@@ -957,7 +957,7 @@ class NetworkInfo:
                     "udevadm",
                     "info",
                     "--query=property",
-                    f"--path={SYS_CLASS_NET}/{interface}",
+                    f"--path={SYS_CLASS_NET}/{interface_name}",
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -971,7 +971,9 @@ class NetworkInfo:
                     properties[key] = value
             return properties
         except subprocess.CalledProcessError as error:
-            logger.error("Failed to query udev properties for %s: %r", interface, error)
+            logger.error(
+                "Failed to query udev properties for %s: %r", interface_name, error
+            )
             return {}
 
     def _validate_interface(self, interface: NetworkInterface) -> None:
