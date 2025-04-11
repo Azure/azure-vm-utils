@@ -96,7 +96,7 @@ if not GEN2_VM_SIZES:
     ]
 
 
-def safe_parse_bytes_literal(s: str):
+def safe_parse_bytes_literal(s: str) -> str:
     """Parse a bytes literal string (e.g. b'foo') safely to a string (foo)."""
     s = s.strip()
     if not s.startswith("b'") or not s.endswith("'"):
