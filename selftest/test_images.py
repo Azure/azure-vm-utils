@@ -120,8 +120,9 @@ def _subprocess_run(
     """Run a subprocess command and capture outputs as utf-8."""
     artifact_path = artifacts_path / artifact_name
     deadline = datetime.now(timezone.utc) + timedelta(minutes=30)
+    printable_cmd = shlex.join(cmd)
+
     while datetime.now(timezone.utc) < deadline:
-        printable_cmd = shlex.join(cmd)
         logger.debug("executing command: %s", printable_cmd)
         proc = subprocess.run(
             cmd,
@@ -163,7 +164,7 @@ def _subprocess_run(
         return proc
 
     raise RuntimeError(
-        f"Command '{shlex.join(cmd)}' timed out after 30 minutes: {artifacts_path.as_posix()}"
+        f"Command '{printable_cmd}' timed out after 30 minutes: {artifacts_path.as_posix()}"
     )
 
 
