@@ -78,7 +78,7 @@ jobs:
           rpm -qa azure-vm-utils
           test -f /usr/lib/dracut/modules.d/97azure-disk/module-setup.sh
           test -f /usr/lib/dracut/modules.d/97azure-unmanaged-sriov/module-setup.sh
-          test -f /usr/lib/systemd/network/10-azure-unmanaged-sriov.network
+          test -f /usr/lib/systemd/network/01-azure-unmanaged-sriov.network
           test -f /usr/lib/udev/rules.d/10-azure-unmanaged-sriov.rules
           test -f /usr/lib/udev/rules.d/80-azure-disk.rules
           test -x /usr/sbin/azure-nvme-id || test -x /usr/bin/azure-nvme-id

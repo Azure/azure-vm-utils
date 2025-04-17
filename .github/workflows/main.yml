@@ -36,7 +36,7 @@ jobs:
     - name: Verify installation
       run: |
         set -x
-        test -f /usr/local/lib/systemd/network/10-azure-unmanaged-sriov.network
+        test -f /usr/local/lib/systemd/network/01-azure-unmanaged-sriov.network
         test -f /usr/local/lib/udev/rules.d/10-azure-unmanaged-sriov.rules
         test -f /usr/local/lib/udev/rules.d/80-azure-disk.rules
         test -x /usr/local/sbin/azure-nvme-id
