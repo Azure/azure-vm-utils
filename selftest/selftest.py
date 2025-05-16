@@ -29,6 +29,7 @@ logger = logging.getLogger("selftest")
 # pylint: disable=too-many-lines
 # pylint: disable=too-many-locals
 
+SYS_CLASS_BLOCK = "/sys/class/block"
 SYS_CLASS_NET = "/sys/class/net"
 
 
@@ -185,6 +186,24 @@ def device_sort(devices: List[str]) -> List[str]:
         ]
 
     return sorted(devices, key=natural_sort_key)
+
+
+def get_disk_io_timeout(disk_name: str) -> int:
+    """Get disk's queue/io_timeout."""
+    timeout_path = Path(SYS_CLASS_BLOCK, disk_name, "queue/io_timeout")
+    logger.debug("checking disk %s io_timeout: %s", disk_name, timeout_path)
+
+    if not timeout_path.exists():
+        logger.error("disk %s io_timeout not found", disk_name)
+        raise FileNotFoundError(f"disk {disk_name} io_timeout not found")
+
+    timeout = timeout_path.read_text(encoding="utf-8").strip()
+
+    try:
+        return int(timeout)
+    except ValueError:
+        logger.error("invalid value for disk %s io_timeout: %r", disk_name, timeout)
+        raise
 
 
 def get_disk_size_gb(disk_path: str) -> int:
@@ -408,6 +427,7 @@ class DiskInfo:
     dev_disk_azure_links: List[str] = field(default_factory=list)
     dev_disk_azure_resource_disk: Optional[str] = None  # resolved path
     dev_disk_azure_resource_disk_size_gib: int = 0
+    nvme_io_timeouts: Dict[str, int] = field(default_factory=dict)
     nvme_local_disk_size_gib: int = 0
     nvme_local_disks_v1: List[str] = field(default_factory=list)
     nvme_local_disks_v2: List[str] = field(default_factory=list)
@@ -461,8 +481,8 @@ class DiskInfo:
 
         nvme_remote_disks = get_remote_nvme_disks()
         if nvme_remote_disks:
-            nvme_remote_os_disk = nvme_remote_disks.pop(0)
-            nvme_remote_data_disks = nvme_remote_disks
+            nvme_remote_os_disk = nvme_remote_disks[0]
+            nvme_remote_data_disks = nvme_remote_disks[1:]
         else:
             nvme_remote_os_disk = None
             nvme_remote_data_disks = []
@@ -476,10 +496,15 @@ class DiskInfo:
             get_disk_size_gib(f"/dev/{scsi_resource_disk}") if scsi_resource_disk else 0
         )
 
+        nvme_io_timeouts: Dict[str, int] = {}
+        for disk_name in nvme_local_disks + nvme_remote_disks:
+            nvme_io_timeouts[disk_name] = get_disk_io_timeout(disk_name)
+
         disk_info = cls(
             dev_disk_azure_links=dev_disk_azure_links,
             dev_disk_azure_resource_disk=dev_disk_azure_resource_disk,
             dev_disk_azure_resource_disk_size_gib=dev_disk_azure_resource_disk_size_gib,
+            nvme_io_timeouts=nvme_io_timeouts,
             nvme_local_disk_size_gib=nvme_local_disk_size_gib,
             nvme_local_disks_v1=nvme_local_disks_v1,
             nvme_local_disks_v2=nvme_local_disks_v2,
@@ -1025,15 +1050,13 @@ class AzureVmUtilsValidator:
         self,
         *,
         skip_imds_validation: bool = False,
-        skip_network_validation: bool = False,
-        skip_symlink_validation: bool = False,
+        skip_udev_validation: bool = False,
     ) -> None:
         self.azure_nvme_id_info = AzureNvmeIdInfo.gather()
         self.disk_info = DiskInfo.gather()
         self.net_info = NetworkInfo.gather()
         self.skip_imds_validation = skip_imds_validation
-        self.skip_network_validation = skip_network_validation
-        self.skip_symlink_validation = skip_symlink_validation
+        self.skip_udev_validation = skip_udev_validation
 
         try:
             self.imds_metadata = get_imds_metadata()
@@ -1175,6 +1198,12 @@ class AzureVmUtilsValidator:
         self.net_info.validate()
         logger.info("validate_networking OK: %r", self.net_info)
 
+    def validate_nvme_io_timeouts(self) -> None:
+        """Validate NVMe queue I/O timeouts."""
+        for disk_name, timeout in self.disk_info.nvme_io_timeouts.items():
+            assert timeout == 240000, f"unexpected timeout for {disk_name}: {timeout}"
+        logger.info("validate_nvme_io_timeouts OK: %r", self.disk_info.nvme_io_timeouts)
+
     def validate_nvme_local_disks(self) -> None:
         """Validate NVMe local disks."""
         logger.info("validate_nvme_local_disks OK: %r", self.disk_info.nvme_local_disks)
@@ -1236,23 +1265,22 @@ class AzureVmUtilsValidator:
         """Run validations."""
         self.azure_nvme_id_info.validate(self.disk_info)
 
-        if self.skip_symlink_validation:
+        if self.skip_udev_validation:
             logger.info("validate_dev_disk_azure_links_data SKIPPED")
             logger.info("validate_dev_disk_azure_links_local SKIPPED")
             logger.info("validate_dev_disk_azure_links_os SKIPPED")
             logger.info("validate_dev_disk_azure_links_resource SKIPPED")
             logger.info("validate_scsi_resource_disk SKIPPED")
+            logger.info("validate_networking SKIPPED")
+            logger.info("validate_nvme_io_timeouts SKIPPED")
         else:
             self.validate_dev_disk_azure_links_data()
             self.validate_dev_disk_azure_links_local()
             self.validate_dev_disk_azure_links_os()
             self.validate_dev_disk_azure_links_resource()
-            self.validate_scsi_resource_disk()
-
-        if self.skip_network_validation:
-            logger.info("validate_networking SKIPPED")
-        else:
             self.validate_networking()
+            self.validate_nvme_io_timeouts()
+            self.validate_scsi_resource_disk()
 
         self.validate_sku_config()
 
@@ -1275,14 +1303,9 @@ def main() -> None:
         help="Skip imds validation (allow for running tests outside Azure VM)",
     )
     parser.add_argument(
-        "--skip-network-validation",
+        "--skip-udev-validation",
         action="store_true",
-        help="Skip network validation (allow for running test without reboot after install)",
-    )
-    parser.add_argument(
-        "--skip-symlink-validation",
-        action="store_true",
-        help="Skip symlink validation (allow for running test without reboot after install)",
+        help="Skip udev validation (allow for running test without reboot after install)",
     )
     args = parser.parse_args()
 
@@ -1293,8 +1316,7 @@ def main() -> None:
 
     validator = AzureVmUtilsValidator(
         skip_imds_validation=args.skip_imds_validation,
-        skip_network_validation=args.skip_network_validation,
-        skip_symlink_validation=args.skip_symlink_validation,
+        skip_udev_validation=args.skip_udev_validation,
     )
     validator.validate()
 
