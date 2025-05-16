@@ -34,6 +34,10 @@ ATTRS{nsid}=="?*", ENV{AZURE_DISK_TYPE}="data", PROGRAM="/bin/sh -ec 'echo $$((%
 LABEL="azure_disk_nvme_id"
 ATTRS{nsid}=="?*", IMPORT{program}="/usr/sbin/azure-nvme-id --udev"
 
+LABEL="azure_disk_nvme_set_io_timeout"
+# Azure NVMe disks require 240 second I/O timeout (or greater).
+ENV{DEVTYPE}=="disk", ATTR{queue/io_timeout}="240000"
+
 LABEL="azure_disk_symlink"
 # systemd v254 ships an updated 60-persistent-storage.rules that would allow
 # these to be deduplicated using $env{.PART_SUFFIX}
