@@ -1200,8 +1200,16 @@ class AzureVmUtilsValidator:
 
     def validate_nvme_io_timeouts(self) -> None:
         """Validate NVMe queue I/O timeouts."""
-        for disk_name, timeout in self.disk_info.nvme_io_timeouts.items():
-            assert timeout == 240000, f"unexpected timeout for {disk_name}: {timeout}"
+        for namespace in self.disk_info.nvme_remote_disks:
+            assert (
+                namespace in self.disk_info.nvme_io_timeouts
+            ), f"missing NVMe I/O timeout for {namespace}"
+
+            timeout = self.disk_info.nvme_io_timeouts[namespace]
+            assert (
+                timeout == 240000
+            ), f"unexpected NVMe I/O timeout for {namespace}: {timeout} (expected 240000 ms)"
+
         logger.info("validate_nvme_io_timeouts OK: %r", self.disk_info.nvme_io_timeouts)
 
     def validate_nvme_local_disks(self) -> None:
