@@ -7,7 +7,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04]
+        os: [ubuntu-22.04, ubuntu-24.04]
     defaults:
       run:
         shell: bash
@@ -46,9 +46,8 @@ jobs:
         test -f /usr/local/share/man/man8/azure-nvme-id.8
         test -f /usr/local/share/man/man8/azure-vm-utils-selftest.8
         azure-nvme-id --version
-        azure-vm-utils-selftest --skip-imds-validation --skip-symlink-validation
+        azure-vm-utils-selftest --skip-imds-validation --skip-udev-validation
     - name: Verify manpages can be generated
-      if: matrix.os != 'ubuntu-20.04'
       run: |
         make -C build generate-manpages
     - name: Rebuild with tests enabled and run tests
@@ -81,9 +80,5 @@ jobs:
       run: |
         python -m venv venv
         source venv/bin/activate
-        if [ ${{ matrix.os }} == "ubuntu-20.04" ]; then
-          pip install -r selftest/test-requirements-frozen-py38.txt
-        else
-          pip install -r selftest/test-requirements-frozen.txt
-        fi
+        pip install -r selftest/test-requirements-frozen.txt
         make -C build python-lint
