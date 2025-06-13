@@ -1,0 +1,15 @@
+[Unit]
+Description=Format and mount local ephemeral NVMe disks
+After=cloud-init.service cloud-init-network.service local-fs.target
+Before=walinuxagent.service waagent.service sysinit.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/azure-ephemeral-disk-setup
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=sysinit.target

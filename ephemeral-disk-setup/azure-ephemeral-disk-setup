@@ -1,0 +1,273 @@
+#!/bin/bash
+
+set -xeuo pipefail
+
+CONFIGURATION_FILE="/etc/azure-ephemeral-disk-setup.conf"
+FSTAB_COMMENT="comment=azure-ephemeral-disk-setup"
+SCSI_RESOURCE_DISK_PATH="/dev/disk/azure/resource"
+SCSI_RESOURCE_DISK_FORCE_REFORMAT="false"
+
+log() {
+    echo "$1" >&2
+}
+
+exit_failure() {
+    echo "$1"
+    exit 1
+}
+
+exit_success() {
+    echo "$1"
+    exit 0
+}
+
+check_if_block_device_needs_setup() {
+    local resolved
+    resolved="$(readlink -f "$disk")"
+    log "Checking disk: $disk -> $resolved"
+
+    if [[ ! -b "$resolved" ]]; then
+        exit_failure "Not a valid block device: $disk"
+    fi
+
+    # Check if disk is currently mounted.
+    if findmnt --noheadings --output SOURCE,TARGET,FSTYPE,OPTIONS --source "$disk" >&2; then
+        exit_failure "Device $disk is already mounted or in use"
+    fi
+
+    # Check if it has partitions.
+    local partitions partition_count
+    mapfile -t partitions < <(lsblk --list --paths -o NAME,TYPE "$disk" 2>/dev/null | awk '$2 == "part" {print $1}')
+    partition_count=${#partitions[@]}
+
+    # Special handling for SCSI resource disk.
+    if [[ "$disk" == "$SCSI_RESOURCE_DISK_PATH" && "$partition_count" -eq 1 ]]; then
+        check_if_scsi_resource_device_needs_setup "$disk" "${partitions[0]}"
+        SCSI_RESOURCE_DISK_FORCE_REFORMAT="true"
+        return
+    fi
+
+    # If disk has partitions, fail setup.
+    if [[ "$partition_count" -gt 0 ]]; then
+        exit_failure "Device $disk has $partition_count partition(s)"
+    fi
+
+    # Check if disk is formatted (has a filesystem).
+    if blkid "$disk" >&2; then
+        exit_failure "Device $disk contains a partition table or is already formatted"
+    fi
+
+    # Check if disk is partitioned/formatted with parted.
+    if parted -s "$disk" print >&2; then
+        exit_failure "Device $disk is partitioned or formatted"
+    fi
+
+    log "Device $disk is not partitioned or formatted, proceeding with setup"
+}
+
+# Check if SCSI resource disk is safe to use.  Only return it if is.
+check_if_scsi_resource_device_needs_setup() {
+    local disk="$1"
+    local partition="$2"
+    local TEMP_MOUNT_PATH UNEXPECTED_FILES
+
+    TEMP_MOUNT_PATH="$(mktemp -d)"
+    mount -t ntfs -o ro "$partition" "$TEMP_MOUNT_PATH" || exit_failure "Mounting $partition as NTFS failed"
+
+    mapfile -t UNEXPECTED_FILES < <(find "$TEMP_MOUNT_PATH" -mindepth 1 -maxdepth 1 \
+        ! -iname 'dataloss_warning_readme.txt' \
+        ! -iname 'system volume information' \
+        -printf '%P\n')
+
+    umount "$TEMP_MOUNT_PATH" || exit_failure "Unmounting NTFS $partition failed"
+    rmdir "$TEMP_MOUNT_PATH"
+
+    if [[ ${#UNEXPECTED_FILES[@]} -gt 0 ]]; then
+        exit_failure "SCSI resource disk $disk is NTFS formatted but contains unexpected files or folders: ${UNEXPECTED_FILES[*]}"
+    fi
+
+    log "SCSI resource disk $disk is NTFS formatted and safe to reformat"
+}
+
+# Load configuration file if it exists.
+if [ -r "${CONFIGURATION_FILE}" ]; then
+    log "Loading configuration from ${CONFIGURATION_FILE}"
+
+    # Source the configuration file, only loading lines that look like valid variable assignments.
+    # shellcheck source=/etc/azure-ephemeral-disk-setup.conf
+    source <(grep -E '^AZURE_EPHEMERAL_DISK_SETUP_[A-Z_]+=["'"'"'A-Za-z0-9_./:-\ ]+$' "${CONFIGURATION_FILE}")
+fi
+
+AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION="${AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION:-mdadm}"
+AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME="${AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME:-azure-ephemeral-md}"
+AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK="${AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK:-512K}"
+AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE="${AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE:-xfs}"
+AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT="${AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT:-/mnt}"
+AZURE_EPHEMERAL_DISK_SETUP_NVME_MODEL_DETECTION="${AZURE_EPHEMERAL_DISK_SETUP_NVME_MODEL_DETECTION:-false}"
+AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE="${AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE:-false}"
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION" =~ ^(mdadm|none)$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION must be either 'mdadm' or 'none'."
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME must be a valid name (alphanumeric, underscores, or hyphens)."
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK" =~ ^[1-9][0-9]*[KMGT]$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK must be a positive integer followed by K, M, G, or T (e.g., 512K, 1M, 2G)."
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE" =~ ^(ext4|xfs)$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE must be either 'ext4' or 'xfs'."
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" =~ ^/ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT must be an absolute path"
+fi
+
+if [[ -L "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" ]] || [[ -e "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" && ! -d "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT"  ]]; then
+    exit_failure "Mount point $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT exists, but is not a directory"
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_NVME_MODEL_DETECTION" =~ ^(true|false)$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_NVME_MODEL_DETECTION must be either 'true' or 'false'"
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE" =~ ^(true|false)$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE must be either 'true' or 'false'"
+fi
+
+MKFS="mkfs.${AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE}"
+if ! command -v "$MKFS" &>/dev/null; then
+    exit_failure "$MKFS is not installed and is required for formatting"
+fi
+
+if ! command -v mdadm &>/dev/null; then
+    exit_failure "mdadm is not installed and is required for disk aggregation"
+fi
+
+# Check to see if mount point is already mounted.
+EXISTING_MOUNT="$(findmnt --noheadings --output SOURCE,TARGET,FSTYPE,OPTIONS --mountpoint "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" || true)"
+EXISTING_FSTAB_MOUNT="$(findmnt --fstab --noheadings --output SOURCE,TARGET,FSTYPE,OPTIONS --mountpoint "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" || true)"
+
+if [[ -n "$EXISTING_MOUNT" ]]; then
+    log "A disk is already mounted at $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT: $EXISTING_MOUNT"
+
+    # Exit with success if the existing mount is managed by this service, otherwise exit with failure.
+    # The only way to identify this is by the fstab comment.
+    if [[ -n "$EXISTING_FSTAB_MOUNT" && "$EXISTING_FSTAB_MOUNT" == *"$FSTAB_COMMENT"* ]]; then
+        exit_success "Already mounted and configured in /etc/fstab, nothing to do"
+    fi
+
+    exit_failure "Mount point $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT is already mounted, perhaps by another service"
+fi
+
+if [[ -n "$EXISTING_FSTAB_MOUNT" && "$EXISTING_FSTAB_MOUNT" != *"$FSTAB_COMMENT"*  ]]; then
+    DETAILS="$(awk '{print "source="$1" target="$2" fstype="$3" options="$4}' <<<"$EXISTING_FSTAB_MOUNT")"
+    exit_failure "Aborting due to conflicting fstab entry for $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT with $DETAILS"
+fi
+
+# Ensure udev rules have created necessary symlinks, ignoring errors if they occur as they're likely unrelated.
+log "Waiting for udev to settle..."
+udevadm settle || true
+
+DISKS=()
+
+# NVMe local disk detection via by-serial symlinks.
+if [[ -d "/dev/disk/azure/local/by-serial" ]]; then
+    mapfile -t DISKS < <(
+        for symlink in $(find /dev/disk/azure/local/by-serial/ -type l | sort); do
+            if [[ "$symlink" == *-part* ]]; then
+                log "Ignoring $symlink, looks like a partition"
+            elif [[ ! -b "$symlink" ]]; then
+                log "Ignoring $symlink, not a block device"
+            else
+                echo "$symlink"                
+            fi
+        done
+    )
+fi
+
+# NVMe local disk detection fallback via model name (if azure-vm-utils is not installed).
+if [[ "$AZURE_EPHEMERAL_DISK_SETUP_NVME_MODEL_DETECTION" == "true" && ${#DISKS[@]} -eq 0 ]]; then
+    mapfile -t DISKS < <(lsblk --paths --noheadings -nodeps -o NAME,MODEL | awk '$0 ~ /Microsoft NVMe Direct Disk( v2)?$/ {print $1}' || true)
+fi
+
+if [[ ${#DISKS[@]} -eq 0 ]]; then
+    if [[ "$AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE" != "true" ]]; then
+        if [[ -L "$SCSI_RESOURCE_DISK_PATH" ]]; then
+            exit_success "No local NVMe disks detected and AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=$AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE, exiting without action"
+        fi
+
+        exit_success "No local NVMe disks detected, exiting without action"
+    fi
+
+    if [[ ! -L "$SCSI_RESOURCE_DISK_PATH" ]]; then
+        exit_success "No local NVMe or SCSI resource disks detected, exiting without action"
+    fi
+
+    log "No local NVMe disks detected, using SCSI resource disk at $SCSI_RESOURCE_DISK_PATH"
+    DISKS=("$SCSI_RESOURCE_DISK_PATH")
+else
+    log "Detected local NVMe disks: ${DISKS[*]}"
+fi
+
+for disk in "${DISKS[@]}"; do
+    check_if_block_device_needs_setup "$disk"
+done
+
+# If we have multiple disks, aggregate them using mdadm, if enabled.
+if [[ ${#DISKS[@]} -gt 1 && "$AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION" == "mdadm" ]]; then
+    md="/dev/md/${AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME}_0"
+
+    mdadm --create "$md" \
+        --level=0 \
+        --raid-devices=${#DISKS[@]} \
+        --metadata=1.2 \
+        --chunk="$AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK" \
+        --name="$AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME" \
+        "${DISKS[@]}" >&2 || exit_failure "Failed to create mdadm array with devices: ${DISKS[*]}"
+    TARGET_DEVICE="$md"
+    EXTRAS=" chunk=$AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK count=${#DISKS[@]}"
+else
+    TARGET_DEVICE="${DISKS[0]}"
+    EXTRAS=""
+    if [[ ${#DISKS[@]} -gt 1 ]]; then
+        log "Multiple disks found but aggregation is disabled. Only using $TARGET_DEVICE"
+    fi
+fi
+
+MKFS_FLAGS=""
+
+# Only force reformat if explicitly configured for SCSI resource disk (with some safety checks).
+if [[ "$SCSI_RESOURCE_DISK_FORCE_REFORMAT" == "true" && ${#DISKS[@]} -eq 1 && ${DISKS[0]} == "$SCSI_RESOURCE_DISK_PATH" ]]; then
+    MKFS_FLAGS="-F"
+    if [[ "$AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE" == "xfs" ]]; then
+        MKFS_FLAGS="-f"
+    fi
+fi
+
+log "Formatting $TARGET_DEVICE with $AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE filesystem"
+$MKFS $MKFS_FLAGS "$TARGET_DEVICE" >&2 || exit_failure "Formatting $TARGET_DEVICE failed"
+
+# Update /etc/fstab to persist the mount and cleanup any old entries.
+if [[ ! -w /etc/fstab ]]; then
+    log "WARNING: unable to persist mount to /etc/fstab as it is not writable"
+else
+    # Clean old fstab entries managed by this service.
+    if grep -q "$FSTAB_COMMENT" /etc/fstab; then
+        log "Cleaning old fstab entries with comment: $FSTAB_COMMENT"
+        sed -i.bak "/$FSTAB_COMMENT/d" /etc/fstab
+    fi
+
+    log "Adding fstab entry for $TARGET_DEVICE at $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT"
+    echo "$TARGET_DEVICE $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT $AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE defaults,nofail,$FSTAB_COMMENT 0 2" | tee -a /etc/fstab >&2
+fi
+
+mkdir -p "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT"
+
+log "Mounting $TARGET_DEVICE at $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT"
+mount -t "$AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE" "$TARGET_DEVICE" "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" || exit_failure "Mounting $TARGET_DEVICE failed"
+
+exit_success "Mounted $TARGET_DEVICE at $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT with fs=${AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE}${EXTRAS}"
