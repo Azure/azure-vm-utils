@@ -1,0 +1,24 @@
+[Unit]
+Description=Format and mount local ephemeral NVMe disks
+After=cloud-init.service cloud-init-network.service
+After=local-fs.target
+DefaultDependencies=no
+Before=cloud-init.target
+Before=waagent.service walinuxagent.service
+Before=network-online.target
+Before=sshd.service
+Before=systemd-user-sessions.service
+
+# It would be ideal to start before sysinit.target, but only works on Debian/Ubuntu.
+# This causes an ordering cycle on Fedora.
+# Before=sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=@AZURE_NVME_ID_INSTALL_DIR@/azure-ephemeral-disk-setup
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-.TH "azure-nvme-id" "8" "February\ 27,\ 2025" "azure-nvme-id @VERSION@" "User Manual"
+.TH "azure-nvme-id" "8" "July\ 28,\ 2025" "azure-nvme-id @VERSION@" "User Manual"
 .hy
 .SH NAME
 .PP
@@ -23,21 +23,21 @@ To suppoort udev rules, --udev option will invoke
 \f[B]azure-nvme-id\f[R] in udev mode.
 .SH OPTIONS
 .TP
-\f[B]\f[CB]--debug\f[B]\f[R]
+\f[CB]--debug\f[R]
 Debug mode with additional logging.
 .TP
-\f[B]\f[CB]--format {plain|json}\f[B]\f[R]
+\f[CB]--format {plain|json}\f[R]
 Output format, default is plain.
 .TP
-\f[B]\f[CB]--help\f[B]\f[R]
+\f[CB]--help\f[R]
 Show usage information and exit.
 .TP
-\f[B]\f[CB]--udev\f[B]\f[R]
-Run in udev mode, printing a set of \f[CR]<key>=<value>\f[R] variables
+\f[CB]--udev\f[R]
+Run in udev mode, printing a set of \f[CB]<key>=<value>\f[R] variables
 consumed by udev rules.
 Requires DEVNAME to be set in environment.
 .TP
-\f[B]\f[CB]--version\f[B]\f[R]
+\f[CB]--version\f[R]
 Show version information and exit.
 .SH EXAMPLES
 .PP
@@ -63,7 +63,7 @@ AZURE_DISK_NAME=nvme-110G-1
 \f[R]
 .fi
 .PP
-Check \f[CR]azure-nvme-id\f[R] version:
+Check \f[CB]azure-nvme-id\f[R] version:
 .IP
 .nf
 \f[CR]

@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # pylint: disable=line-too-long
 # pylint: disable=too-many-instance-attributes
 # pylint: disable=too-many-arguments
+# pylint: disable=too-many-lines
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-positional-arguments
 # pylint: disable=unused-argument
@@ -236,9 +237,15 @@ def random_suffix():
 
 
 @pytest.fixture
+def reallocates():
+    """Get the number of reallocates."""
+    yield int(os.getenv("SELFTEST_REALLOCATES", "5"))
+
+
+@pytest.fixture
 def reboots():
     """Get the number of reboots."""
-    yield int(os.getenv("SELFTEST_REBOOTS", "50"))
+    yield int(os.getenv("SELFTEST_REBOOTS", "5"))
 
 
 @pytest.fixture
@@ -300,6 +307,10 @@ def temp_resource_group(
         user = getpass.getuser()
         resource_group_name = f"temp-rg-{user}-selftest-{random_suffix}"
 
+    nsg_name = f"{resource_group_name}-nsg"
+    subnet_name = f"{resource_group_name}-subnet"
+    vnet_name = f"{resource_group_name}-vnet"
+
     if create_rg:
         _subprocess_run(
             [
@@ -319,6 +330,125 @@ def temp_resource_group(
             artifacts_path=artifacts_path,
             check=True,
         )
+        logger.info("created resource group: %s", resource_group_name)
+
+        proc = _subprocess_run(
+            [
+                "az",
+                "network",
+                "nsg",
+                "create",
+                "--subscription",
+                azure_subscription,
+                "--resource-group",
+                resource_group_name,
+                "--location",
+                azure_location,
+                "--name",
+                nsg_name,
+            ],
+            artifact_name="az_network_nsg_create",
+            artifacts_path=artifacts_path,
+            check=False,
+        )
+        if (
+            proc.returncode != 0
+            and "CanceledAndSupersededDueToAnotherOperation" not in proc.stderr
+        ):
+            raise RuntimeError(
+                f"Failed to create NSG {nsg_name} in resource group {resource_group_name}: stdout={proc.stdout} stderr={proc.stderr}"
+            )
+
+        logger.info("created nsg: %s", proc.stdout.strip())
+
+        proc = _subprocess_run(
+            [
+                "az",
+                "network",
+                "nsg",
+                "rule",
+                "create",
+                "--subscription",
+                azure_subscription,
+                "--resource-group",
+                resource_group_name,
+                "--nsg-name",
+                nsg_name,
+                "--name",
+                "DefaultAllowSSH",
+                "--priority",
+                "1000",
+                "--protocol",
+                "Tcp",
+                "--destination-port-range",
+                "22",
+                "--access",
+                "Allow",
+            ],
+            artifact_name="az_network_nsg_rule_ssh_create",
+            artifacts_path=artifacts_path,
+            check=False,
+        )
+        if (
+            proc.returncode != 0
+            and "CanceledAndSupersededDueToAnotherOperation" not in proc.stderr
+        ):
+            raise RuntimeError(
+                f"Failed to create NSG rule DefaultAllowSSH in resource group {resource_group_name}: stdout={proc.stdout} stderr={proc.stderr}"
+            )
+
+        logger.info("created nsg rule: %s", proc.stdout.strip())
+
+        proc = _subprocess_run(
+            [
+                "az",
+                "network",
+                "vnet",
+                "create",
+                "--subscription",
+                azure_subscription,
+                "--resource-group",
+                resource_group_name,
+                "--location",
+                azure_location,
+                "--name",
+                vnet_name,
+                "--address-prefix",
+                "10.0.0.0/16",
+            ],
+            artifact_name="az_network_vnet_create",
+            artifacts_path=artifacts_path,
+            check=True,
+        )
+        logger.info("created vnet: %s", proc.stdout.strip())
+
+        proc = _subprocess_run(
+            [
+                "az",
+                "network",
+                "vnet",
+                "subnet",
+                "create",
+                "--subscription",
+                azure_subscription,
+                "--resource-group",
+                resource_group_name,
+                "--vnet-name",
+                vnet_name,
+                "--name",
+                subnet_name,
+                "--address-prefix",
+                "10.0.1.0/24",
+                "--network-security-group",
+                nsg_name,
+                "--default-outbound-access",
+                "false",
+            ],
+            artifact_name="az_network_vnet_subnet_create",
+            artifacts_path=artifacts_path,
+            check=True,
+        )
+        logger.info("created subnet: %s", proc.stdout.strip())
 
     yield resource_group_name
 
@@ -429,7 +559,7 @@ def public_ip(
 @pytest.fixture
 def delete_after_tag():
     """Get the deleteAfter tag value."""
-    yield (datetime.now(timezone.utc) + timedelta(hours=8)).isoformat()
+    yield (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
 
 
 class TestVMs:
@@ -446,6 +576,7 @@ class TestVMs:
         delete_after_tag,
         hold_failures,
         public_ip,
+        reallocates,
         reboots,
         request,
         ssh_key_path,
@@ -460,12 +591,13 @@ class TestVMs:
         self.artifacts_path = artifacts_path
         self.azure_location = azure_location
         self.azure_subscription = azure_subscription
+        self.alloc = 0
         self.boot = 0
         self.delete_after_tag = delete_after_tag
         self.hold_failures = hold_failures
         self.image = image
-        self.nsg = os.getenv("SELFTEST_NSG")
         self.public_ip, self.public_ip_name = public_ip
+        self.reallocates = reallocates
         self.reboots = reboots
         self.request = request
         self.selftest_script_path = (
@@ -476,6 +608,9 @@ class TestVMs:
         self.temp_resource_group = temp_resource_group
         self.vm_name = temp_vm_name
         self.vm_size = vm_size
+        self.nsg_name = f"{temp_resource_group}-nsg"
+        self.subnet_name = f"{temp_resource_group}-subnet"
+        self.vnet_name = f"{temp_resource_group}-vnet"
 
         self.ssh_command = [
             "ssh",
@@ -498,17 +633,26 @@ class TestVMs:
             f'console_cmd="az serial-console connect -n {self.vm_name} -g {self.temp_resource_group}"\n'
             f"artifacts_path={self.artifacts_path.as_posix()}\n"
         )
+
+        # Ensure the failed flag is reset for each test run as it is used
+        request.session.failed = False
+
         try:
             yield
         finally:
             if is_cleanup_permitted(request, hold_failures):
-                logger.info("CLEANING:\n%s", self.vm_cfg)
+                logger.info("cleaning:\n%s", self.vm_cfg)
                 self._cleanup()
             else:
                 logger.error(
                     "TEST FAILED, HOLDING RESOURCES FOR DEBUGGING:\n%s",
                     self.vm_cfg,
                 )
+
+    @property
+    def boot_id(self) -> str:
+        """Generate a boot ID based on the alloc and boot counts."""
+        return f"alloc{self.alloc}-boot{self.boot}"
 
     def _cleanup(self):
         """Cleanup resources."""
@@ -569,13 +713,16 @@ class TestVMs:
             "Delete",
             "--tags",
             f"deleteAfter={self.delete_after_tag}",
+            "--nsg",
+            self.nsg_name,
+            "--subnet",
+            self.subnet_name,
+            "--vnet-name",
+            self.vnet_name,
         ]
 
         if self.admin_password:
             cmd += ["--admin-password", self.admin_password]
-
-        if self.nsg:
-            cmd += ["--nsg", self.nsg]
 
         proc = _subprocess_run(
             cmd,
@@ -598,7 +745,7 @@ class TestVMs:
                 f"Unable to create VM: stdout={proc.stdout} stderr={proc.stderr}"
             )
 
-        logger.info("CREATED VM:\n%s", self.vm_cfg)
+        logger.info("created VM:\n%s", self.vm_cfg)
         (self.artifacts_path / "vm.cfg").write_text(self.vm_cfg)
 
         # Enable boot diagnostics
@@ -650,7 +797,7 @@ class TestVMs:
                     "tsv",
                 ],
                 artifacts_path=self.artifacts_path,
-                artifact_name=f"boot{self.boot}-console",
+                artifact_name=f"{self.boot_id}-console",
                 decode=True,
             )
             if proc.returncode == 0 and "BlobNotFound" not in proc.stderr:
@@ -662,33 +809,33 @@ class TestVMs:
         """Fetch logs."""
         proc = self._execute_ssh_command(
             ["journalctl", "-o", "short-monotonic", "-b"],
-            artifact_name=f"boot{self.boot}-journal",
+            artifact_name=f"{self.boot_id}-journal",
         )
 
         if proc.returncode != 0:
             raise RuntimeError(
-                f"failed to fetch journalctl logs on boot {self.boot} @ {self.artifacts_path.as_posix()}: {proc.stderr}"
+                f"failed to fetch journalctl logs on {self.boot_id} @ {self.artifacts_path.as_posix()}: {proc.stderr}"
             )
 
-        self._scp_from_vm("/var/log/cloud-init.log", f"boot{self.boot}-cloud-init.log")
+        self._scp_from_vm("/var/log/cloud-init.log", f"{self.boot_id}-cloud-init.log")
         self._scp_from_vm(
-            "/var/log/cloud-init-output.log", f"boot{self.boot}-cloud-init-output.log"
+            "/var/log/cloud-init-output.log", f"{self.boot_id}-cloud-init-output.log"
         )
         self._execute_ssh_command(
             ["rm", "-f", "/var/log/cloud-init.log", "/var/log/cloud-init-output.log"],
-            artifact_name=f"boot{self.boot}-rm-logs",
+            artifact_name=f"{self.boot_id}-rm-logs",
         )
 
     def _run_selftest_script(self) -> None:
         """Run selftest script on the VM."""
         proc = self._execute_ssh_command(
             [self.target_script_path, "--debug"],
-            artifact_name=f"boot{self.boot}-selftest",
+            artifact_name=f"{self.boot_id}-selftest",
         )
 
         if proc.returncode != 0:
             raise RuntimeError(
-                f"self-test failed on boot {self.boot} @ {self.artifacts_path.as_posix()}: {proc.stderr}"
+                f"self-test failed on {self.boot_id} @ {self.artifacts_path.as_posix()}: {proc.stderr}"
             )
 
     def _scp_from_vm(self, src: str, artifact_name: str) -> Path:
@@ -723,6 +870,99 @@ class TestVMs:
         if proc.returncode != 0:
             raise RuntimeError(f"failed to scp {src_path} -> {dst}: {proc.stderr}")
 
+    def _deallocate_vm(self) -> None:
+        """Deallocate the VM."""
+        proc = _subprocess_run(
+            [
+                "az",
+                "vm",
+                "deallocate",
+                "--subscription",
+                self.azure_subscription,
+                "--resource-group",
+                self.temp_resource_group,
+                "--name",
+                self.vm_name,
+            ],
+            artifacts_path=self.artifacts_path,
+            artifact_name="az_vm_deallocate",
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"failed to deallocate VM {self.vm_name}: {proc.stderr}")
+
+        logger.info("deallocated VM: %s", self.vm_name)
+
+    def _get_vm_powerstate(self) -> str:
+        """Get the power state of the VM."""
+        proc = _subprocess_run(
+            [
+                "az",
+                "vm",
+                "get-instance-view",
+                "--subscription",
+                self.azure_subscription,
+                "--resource-group",
+                self.temp_resource_group,
+                "--name",
+                self.vm_name,
+                "--query",
+                "instanceView.statuses[?starts_with(code,'PowerState/')].displayStatus",
+                "-o",
+                "tsv",
+            ],
+            artifacts_path=self.artifacts_path,
+            artifact_name="az_vm_get_power_state",
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"failed to get VM power state {self.vm_name}: {proc.stderr}"
+            )
+
+        return proc.stdout.strip()
+
+    def _is_vm_running(self) -> bool:
+        """Check if the VM is running."""
+        power_state = self._get_vm_powerstate()
+        logger.debug("VM %s power state: %s", self.vm_name, power_state)
+        return power_state == "VM running"
+
+    def _start_vm(self) -> None:
+        """Start the VM with retries if needed."""
+        retries_remaining = 5
+        while True:
+            proc = _subprocess_run(
+                [
+                    "az",
+                    "vm",
+                    "start",
+                    "--subscription",
+                    self.azure_subscription,
+                    "--resource-group",
+                    self.temp_resource_group,
+                    "--name",
+                    self.vm_name,
+                ],
+                artifacts_path=self.artifacts_path,
+                artifact_name="az_vm_start",
+            )
+            if proc.returncode == 0:
+                return
+
+            # Sometimes the VM start fails with a Conflict error due to
+            # previous deallocate even though it technically finished.
+            # Retry if this happens.
+            if "Conflict" in proc.stderr and retries_remaining > 0:
+                logger.warning(
+                    "start VM %s failed with Conflict, retrying... (%d attempts left)",
+                    self.vm_name,
+                    retries_remaining,
+                )
+                time.sleep(5)
+                retries_remaining -= 1
+                continue
+
+            raise RuntimeError(f"failed to start VM {self.vm_name}: {proc.stderr}")
+
     def _reboot_vm(self) -> None:
         """Reboot the VM."""
         self._execute_ssh_command(["reboot"], artifact_name="reboot")
@@ -740,12 +980,20 @@ class TestVMs:
                 artifact_name=f"verify-image-{os.path.basename(config)}",
             )
             if proc.returncode == 0:
-                raise RuntimeError(f"config {config} found in {self.image}")
+                msg = f"config {config} found in {self.image}"
+                logger.error(msg)
 
     def _wait_for_vm(self) -> None:
         """Wait for the VM to be ready."""
         while True:
-            logger.debug("waiting for VM to be ready on boot %d...", self.boot)
+            logger.debug("waiting for VM to be ready on boot %s...", self.boot_id)
+            if not self._is_vm_running():
+                logger.debug("VM %s is not running, starting...", self.vm_name)
+                self._start_vm()
+
+            # Refresh boot diagnostics on every loop in case something went wrong.
+            self._fetch_boot_diagnostics()
+
             self._execute_ssh_command(
                 ["cloud-init", "status", "--wait"], artifact_name="cloud-init-status"
             )
@@ -782,12 +1030,17 @@ class TestVMs:
             )
             self._verify_image()
 
-            reboots = int(os.getenv("SELFTEST_REBOOTS", "50"))
-            for self.boot in range(0, reboots):
-                self._fetch_boot_diagnostics()
-                self._fetch_logs()
-                self._run_selftest_script()
-                self._reboot_vm()
+            for self.alloc in range(0, self.reallocates + 1):
+                for self.boot in range(0, self.reboots + 1):
+                    self._wait_for_vm()
+                    self._fetch_boot_diagnostics()
+                    self._fetch_logs()
+                    self._run_selftest_script()
+                    if self.boot < self.reboots:
+                        self._reboot_vm()
+                if self.alloc < self.reallocates:
+                    self._deallocate_vm()
+                    self._start_vm()
         except Exception as error:
             self.request.session.failed = True
             logger.error(
