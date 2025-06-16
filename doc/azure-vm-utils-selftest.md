@@ -31,13 +31,13 @@ $ sudo azure-vm-utils-selftest
 To run inside Azure VM without a reboot after install:
 
 ```bash
-azure-vm-utils-selftest --skip-symlink-validation
+azure-vm-utils-selftest --skip-udev-validation
 ```
 
 To run outside of Azure VM:
 
 ```bash
-azure-vm-utils-selftest --skip-imds-validation --skip-symlink-validation
+azure-vm-utils-selftest --skip-imds-validation --skip-udev-validation
 ```
 
 Hopefully it exits successfully!

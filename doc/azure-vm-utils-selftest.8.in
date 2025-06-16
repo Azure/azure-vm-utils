@@ -6,7 +6,7 @@ azure-vm-utils-selftest - packaging self-tests
 .SH SYNOPSIS
 .PP
 \f[B]azure-vm-utils-selftest [--skip-imds-validation]
-[--skip-symlink-validation]\f[R]
+[--skip-udev-validation]\f[R]
 .SH DESCRIPTION
 .PP
 \f[B]azure-vm-utils-selftest\f[R] validates functionailty related to
@@ -28,7 +28,7 @@ To run inside Azure VM without a reboot after install:
 .IP
 .nf
 \f[CR]
-azure-vm-utils-selftest --skip-symlink-validation
+azure-vm-utils-selftest --skip-udev-validation
 \f[R]
 .fi
 .PP
@@ -36,7 +36,7 @@ To run outside of Azure VM:
 .IP
 .nf
 \f[CR]
-azure-vm-utils-selftest --skip-imds-validation --skip-symlink-validation
+azure-vm-utils-selftest --skip-imds-validation --skip-udev-validation
 \f[R]
 .fi
 .PP
