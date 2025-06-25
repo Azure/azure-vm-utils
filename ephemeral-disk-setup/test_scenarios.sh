@@ -301,6 +301,46 @@ test_fstab_readonly() {
     assert_regex_in_log "WARNING: unable to persist mount to /etc/fstab"
 }
 
+test_fstab_readonly_reboot_single_nvme() {
+    configure_nvme_disks 1
+    configure_conf
+    disable_write_fstab
+
+    run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=xfs" 0
+    assert_regex_in_log "WARNING: unable to persist mount to /etc/fstab"
+
+    # Simulate a reboot by resetting unmounting /mnt.
+    umount /mnt
+
+    run_and_assert "Mounted existing filesystem with label=AzureEphmDsk at /mnt" 0
+}
+
+test_fstab_readonly_reboot_already_mounted_elsewhere() {
+    configure_nvme_disks 1
+    configure_conf
+    disable_write_fstab
+
+    run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=xfs" 0
+    assert_regex_in_log "WARNING: unable to persist mount to /etc/fstab"
+
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT=/media"
+    run_and_assert "Existing filesystem with label=AzureEphmDsk is already mounted at /mnt" 1
+}
+
+test_fstab_readonly_reboot_aggregated_nvme() {
+    configure_nvme_disks 2
+    configure_conf
+    disable_write_fstab
+
+    run_and_assert "Mounted /dev/md/azure-ephemeral-md_0 at /mnt with fs=xfs chunk=512K count=2" 0
+    assert_regex_in_log "WARNING: unable to persist mount to /etc/fstab"
+
+    # Simulate a reboot by resetting unmounting /mnt.
+    umount /mnt
+
+    run_and_assert "Mounted existing filesystem with label=AzureEphmDsk at /mnt" 0
+}
+
 test_fstab_readonly_idempotent_single_nvme() {
     configure_nvme_disks 1
     disable_write_fstab
@@ -730,7 +770,8 @@ test_resource_already_partitioned_single_formatted() {
     configure_nvme_disks 0
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
-    run_and_assert "Mounting ${RESOURCE_DISK}-part1 as NTFS failed" 1
+    local resolved="$(readlink -f "${RESOURCE_DISK}-part1")"
+    run_and_assert "Mounting ${resolved} as NTFS failed" 1
 }
 
 test_resource_unformatted() {
