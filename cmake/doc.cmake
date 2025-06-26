@@ -22,9 +22,11 @@ set(PANDOC_FIXUPS_COMMAND sed -i 's/f\\[C]/f[CR]/g')
 
 add_custom_target(
     generate-manpages
-    COMMAND ${PANDOC_GENERATE_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-nvme-id.md" -o ${CMAKE_SOURCE_DIR}/doc/azure-nvme-id.8.in
+    COMMAND ${PANDOC_GENERATE_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-ephemeral-disk-setup.md" -o "${CMAKE_SOURCE_DIR}/doc/azure-ephemeral-disk-setup.8.in"
+    COMMAND ${PANDOC_FIXUPS_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-ephemeral-disk-setup.8.in"
+    COMMAND ${PANDOC_GENERATE_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-nvme-id.md" -o "${CMAKE_SOURCE_DIR}/doc/azure-nvme-id.8.in"
     COMMAND ${PANDOC_FIXUPS_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-nvme-id.8.in"
-    COMMAND ${PANDOC_GENERATE_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-vm-utils-selftest.md" -o ${CMAKE_SOURCE_DIR}/doc/azure-vm-utils-selftest.8.in
+    COMMAND ${PANDOC_GENERATE_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-vm-utils-selftest.md" -o "${CMAKE_SOURCE_DIR}/doc/azure-vm-utils-selftest.8.in"
     COMMAND ${PANDOC_FIXUPS_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-vm-utils-selftest.8.in"
 )
 
