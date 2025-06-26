@@ -55,6 +55,7 @@ This package contains the self-test script for the Azure VM Utils package.
 %{_exec_prefix}/lib/udev/rules.d/80-azure-disk.rules
 %{_bindir}/azure-ephemeral-disk-setup
 %{_bindir}/azure-nvme-id
+%{_mandir}/man8/azure-ephemeral-disk-setup.8.gz
 %{_mandir}/man8/azure-nvme-id.8.gz
 %{_sysconfdir}/azure-ephemeral-disk-setup.conf
 
