@@ -1,0 +1,165 @@
+.TH "" "" "June\ 26,\ 2025" " @VERSION@" ""
+.hy
+.IP
+.nf
+\f[CR]
+---
+title: azure-ephemeral-disk-setup
+section: 8
+header: User Manual
+footer: azure-ephemeral-disk-setup __VERSION__
+date: __DATE__
+---
+
+# NAME
+
+**azure-ephemeral-disk-setup** - format and mount Azure ephemeral NVMe or SCSI disks
+
+# SYNOPSIS
+
+**azure-ephemeral-disk-setup**
+
+# DESCRIPTION
+
+**azure-ephemeral-disk-setup** is a one-shot initialization service for Azure virtual machines that automatically detects, validates, formats, and mounts ephemeral local disks (NVMe or optionally SCSI). It supports multi-disk aggregation with \[ga]mdadm\[ga] and ensures safe, idempotent operation.
+
+This intended to be configured via \[ga]/etc/azure-ephemeral-disk-setup.conf\[ga] and used early in the boot sequence (via \[ga]systemd\[ga]) to prepare local storage under a specified mount point, typically \[ga]/mnt\[ga].
+
+# CONFIGURATION VARIABLES
+
+These may be set in \[ga]/etc/azure-ephemeral-disk-setup.conf\[ga] or directly exported into environment (note that any config file would override the environment):
+
+\[ga]AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION\[ga]  
+: \[ga]mdadm\[ga] (default) or \[ga]none\[ga]. Defines if multiple NVMe disks are aggregated into RAID-0.
+
+\[ga]AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE\[ga]  
+: Filesystem to use: \[ga]xfs\[ga] (default) or \[ga]ext4\[ga].
+
+\[ga]AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK\[ga]  
+: RAID chunk size, e.g., \[ga]512K\[ga], \[ga]1M\[ga]. Default is \[ga]512K\[ga].
+
+\[ga]AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME\[ga]  
+: RAID name, default: \[ga]azure-ephemeral-md\[ga].
+
+\[ga]AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT\[ga]  
+: Mount path, default: \[ga]/mnt\[ga].
+
+\[ga]AZURE_EPHEMERAL_DISK_SETUP_NVME_MODEL_DETECTION\[ga]  
+: If \[ga]true\[ga], uses NVMe model detection if symlinks are missing.
+
+\[ga]AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE\[ga]  
+: If \[ga]true\[ga], will fall back to SCSI resource disk if no NVMe disks are available.
+
+# DETAILS
+
+The service performs the following steps in order:
+
+1. **Load Configuration**:
+   - From \[ga]/etc/azure-ephemeral-disk-setup.conf\[ga] if it exists.
+   - There is restrictive filtering to minimize risk of bad configuration: \[ga]source <(grep -E \[aq]\[ha]AZURE_EPHEMERAL_DISK_SETUP_[A-Z_]+=[\[dq]\[aq]\[dq]\[aq]\[dq]\[aq]A-Za-z0-9_./:-\[rs] ]+$\[aq] \[dq]${CONFIGURATION_FILE}\[dq])\[ga]
+
+2. **Validate configuration**:
+   - Ensure configuration appears to be valid.
+
+3. **Check Existing Mounts**:
+   - If the mount point is already mounted **and** the corresponding \[ga]/etc/fstab\[ga] entry includes the comment \[ga]comment=azure-ephemeral-disk-setup\[ga], it exits with success.
+   - If mounted or defined by another service, it exits with an error.
+
+4. **Disk Detection**:
+   - NVMe disks are discovered via \[ga]/dev/disk/azure/local/by-serial/*\[ga].
+     - If \[ga]AZURE_EPHEMERAL_DISK_SETUP_NVME_MODEL_DETECTION=true\[ga]: NVMe model strings are used to detect disks (to support cases where azure-vm-utils is not installed).
+   - If no NVMe and \[ga]AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true\[ga], SCSI resource disk is discovered via \[ga]/dev/disk/azure/resource\[ga].
+
+5. **Disk Validation**:
+   - NVMe local disks must be:
+     - block devices
+     - not mounted
+     - not partitioned
+     - not already formatted
+   - SCSI resource disk has an exception for pre-formatted NTFS disks and must be:
+     - empty other than \[ga]dataloss_warning_readme.txt\[ga] and \[ga]System Volume Information\[ga]
+     - not mounted
+     - single partition
+
+6. **Aggregation (if configured)**:
+   - If more than one NVMe local disk is found and \[ga]AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION=mdadm\[ga], creates a RAID-0 array with:
+     - Metadata version 1.2
+     - Chunk size per configuration
+     - Name per configuration
+     - Exported as \[ga]/dev/md/<name>_0\[ga]
+
+7. **Filesystem Formatting**:
+   - Formats the target device with the configured filesystem.
+   - Forced formatting is only allowed for SCSI disks with verified NTFS contents.
+
+8. **Mounting and fstab Update**:
+   - Creates the mount point directory.
+   - Old entries with \[ga]comment=azure-ephemeral-disk-setup\[ga] are removed.
+   - Adds a line to \[ga]/etc/fstab\[ga] using:
+     \[ga]\[ga]\[ga]
+     <device> <mount_point> <fs_type> defaults,nofail,comment=azure-ephemeral-disk-setup 0 2
+     \[ga]\[ga]\[ga]
+   - Mounted directly to mount point to support images with read-only fstab.
+
+# EXIT STATUS
+
+**0** \[en] Success  
+**1** \[en] Configuration or device validation error  
+
+# EXAMPLES
+
+Detect and format ephemeral disks using default settings:
+
+\[ga]\[ga]\[ga]bash
+$ sudo azure-ephemeral-disk-setup
+\f[R]
+.fi
+.PP
+Configure SCSI resource disk fallback:
+.IP
+.nf
+\f[CR]
+# /etc/azure-ephemeral-disk-setup.conf
+AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true
+AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE=ext4
+AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT=/mnt
+\f[R]
+.fi
+.PP
+Example fstab entry after setup of SCSI resource disk:
+.IP
+.nf
+\f[CR]
+/dev/disk/azure/resource /mnt xfs defaults,nofail,comment=azure-ephemeral-disk-setup 0 2
+\f[R]
+.fi
+.PP
+Example fstab entry after setup of multiple local NVMe disks:
+.IP
+.nf
+\f[CR]
+/dev/md/azure-ephemeral-md_0 /mnt xfs defaults,nofail,comment=azure-ephemeral-disk-setup 0 2
+\f[R]
+.fi
+.SH FILES
+.TP
+\f[V]/etc/azure-ephemeral-disk-setup.conf\f[R]
+Optional user configuration file.
+.TP
+\f[V]/etc/fstab\f[R]
+Mount persistence configuration.
+.SH DEBUGGING
+.PP
+The service may be debugged using \f[V]bash -x\f[R]:
+.IP
+.nf
+\f[CR]
+$ sudo bash -x azure-ephemeral-disk-setup
+\f[R]
+.fi
+.SH SEE ALSO
+.PP
+\f[B]mdadm(8)\f[R], \f[B]mount(8)\f[R], \f[B]cloud-init(8)\f[R],
+\f[B]waagent(8)\f[R]
+.PP
+Project home: <https://github.com/Azure/azure-vm-utils>
