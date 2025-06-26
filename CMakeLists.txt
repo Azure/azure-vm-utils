@@ -12,7 +12,7 @@ endif()
 
 set(AZURE_NVME_ID_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/sbin" CACHE PATH "azure-nvme-id installation directory")
 set(AZURE_EPHEMERAL_DISK_SETUP_CONF_INSTALL_DIR "/etc" CACHE PATH "azure-ephemeral-disk-setup.conf installation directory")
-set(AZURE_EPHEMERAL_DISK_SETUP_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/sbin" CACHE PATH "azure-ephemeral-disk-setup installation directory")
+set(AZURE_EPHEMERAL_DISK_SETUP_INSTALL_DIR "${AZURE_NVME_ID_INSTALL_DIR}" CACHE PATH "azure-ephemeral-disk-setup installation directory")
 set(AZURE_EPHEMERAL_DISK_SETUP_SERVICE_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib/systemd/system" CACHE PATH "azure-ephemeral-disk-setup.service installation directory")
 set(DRACUT_MODULES_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib/dracut/modules.d" CACHE PATH "dracut modules installation directory")
 set(INITRAMFS_HOOKS_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/share/initramfs-tools/hooks" CACHE PATH "initramfs-tools hooks installation directory")
