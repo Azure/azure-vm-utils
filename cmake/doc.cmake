@@ -18,7 +18,7 @@ set(PANDOC_GENERATE_COMMAND
     --variable footer="${manpage_name} ${VERSION}"
     --variable date="${TODAY}"
 )
-set(PANDOC_FIXUPS_COMMAND sed -i 's/f\\[C]/f[CR]/g')
+set(PANDOC_FIXUPS_COMMAND sed -i -e 's/f\\[C]/f[CR]/g' -e 's/f\\[V]/f[CB]/g')
 
 add_custom_target(
     generate-manpages
