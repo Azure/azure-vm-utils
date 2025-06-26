@@ -11,6 +11,7 @@ BuildRequires:  cmake
 BuildRequires:  gcc
 BuildRequires:  json-c-devel
 BuildRequires:  libcmocka-devel
+Requires:       xfsprogs
 
 %description
 A collection of utilities and udev rules to make the most of the Linux
