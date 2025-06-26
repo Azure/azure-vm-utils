@@ -1,5 +1,11 @@
 #!/bin/bash
 
+VERSION='@VERSION@'
+if [[ "$1" == "--version" ]]; then
+    echo "$VERSION"
+    exit 0
+fi
+
 set -xeuo pipefail
 
 CONFIGURATION_FILE="/etc/azure-ephemeral-disk-setup.conf"
