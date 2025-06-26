@@ -83,7 +83,7 @@ jobs:
           test -f /usr/lib/systemd/system/azure-ephemeral-disk-setup.service
           test -f /usr/lib/udev/rules.d/10-azure-unmanaged-sriov.rules
           test -f /usr/lib/udev/rules.d/80-azure-disk.rules
-          test -x /usr/sbin/azure-ephemeral-disk-setup
+          test -x /usr/sbin/azure-ephemeral-disk-setup  || test -x /usr/bin/azure-ephemeral-disk-setup
           test -x /usr/sbin/azure-nvme-id || test -x /usr/bin/azure-nvme-id
           test -x /usr/sbin/azure-vm-utils-selftest || test -x /usr/bin/azure-vm-utils-selftest
           test -f /usr/share/man/man8/azure-ephemeral-disk-setup.8.gz
