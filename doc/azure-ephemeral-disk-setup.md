@@ -1,4 +1,3 @@
-````markdown
 ---
 title: azure-ephemeral-disk-setup
 section: 8
