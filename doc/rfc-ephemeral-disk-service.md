@@ -179,7 +179,7 @@ To allow for some flexibility for customers, we initially intend to support a nu
 | Variable Name                                   | Supported Values           | Default Value      | Description                                                                                             |
 |-------------------------------------------------|----------------------------|--------------------|---------------------------------------------------------------------------------------------------------|
 | AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION          | mdadm                      | mdadm              | Aggregation mode for local NVMe disks if multiple are found                                                    |
-| AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE              | ext4, xfs                  | xfs                | Filesystem to format the volume                                                                         |
+| AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE              | ext4, xfs                  | ext4               | Filesystem to format the volume                                                                         |
 | AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK          | Any valid mdadm chunk size | 512K               | mdadm --chunk <chunk size>                                                                          |
 | AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME           | Any valid mdadm name       | azure-ephemeral-md | mdadm --name <name>                                                                         |
 | AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT          | Any valid mount point path | /mnt               | Where to mount the final volume                                                                         |

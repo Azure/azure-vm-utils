@@ -29,7 +29,7 @@ These may be set in `/etc/azure-ephemeral-disk-setup.conf` or directly exported 
 : `mdadm` (default) or `none`. Defines if multiple NVMe disks are aggregated into RAID-0.
 
 `AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE`  
-: Filesystem to use: `xfs` (default) or `ext4`.
+: Filesystem to use: `ext4` (default) or `xfs`.
 
 `AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK`  
 : RAID chunk size, e.g., `512K`, `1M`. Default is `512K`.
