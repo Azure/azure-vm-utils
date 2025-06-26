@@ -30,6 +30,7 @@ add_custom_target(
     COMMAND ${PANDOC_FIXUPS_COMMAND} "${CMAKE_SOURCE_DIR}/doc/azure-vm-utils-selftest.8.in"
 )
 
+generate_manpage("azure-ephemeral-disk-setup")
 generate_manpage("azure-nvme-id")
 generate_manpage("azure-vm-utils-selftest")
 
