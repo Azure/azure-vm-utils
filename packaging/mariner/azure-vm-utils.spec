@@ -15,7 +15,6 @@ BuildRequires:  json-c-devel
 BuildRequires:  kernel-headers
 BuildRequires:  libcmocka-devel
 BuildRequires:  make
-Requires:       xfsprogs
 
 %description
 A collection of utilities and udev rules to make the most of the Linux
