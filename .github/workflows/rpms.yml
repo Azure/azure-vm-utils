@@ -71,6 +71,7 @@ jobs:
           ./scripts/build-rpm.sh
       - name: Install rpms
         run: |
+          dnf install -y mdadm
           rpm -Uvh -i out/*.rpm
       - name: Verify installation
         run: |

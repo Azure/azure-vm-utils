@@ -37,6 +37,7 @@ jobs:
         lintian --fail-on error,warning out/*.deb
     - name: Install debs
       run: |
+        sudo apt-get install -y mdadm
         sudo dpkg -i out/*.deb
     - name: Verify installation
       run: |
