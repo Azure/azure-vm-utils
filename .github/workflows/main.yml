@@ -55,7 +55,7 @@ jobs:
         set -x
         sudo apt install -y libcmocka-dev cppcheck clang-format
         rm -rf build
-        cmake -B build -S .
+        cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug
         cd build
         make
 
