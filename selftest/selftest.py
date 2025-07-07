@@ -402,6 +402,8 @@ def get_root_block_device() -> str:
 def get_scsi_resource_disk() -> Optional[str]:
     """Get the SCSI resource disk device."""
     paths = [
+        # azure resource disk
+        "/dev/disk/azure/resource",
         # cloud-init udev rules
         "/dev/disk/cloud/azure_resource",
         # gen2
