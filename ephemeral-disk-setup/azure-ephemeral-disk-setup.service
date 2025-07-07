@@ -15,7 +15,7 @@ Before=systemd-user-sessions.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/azure-ephemeral-disk-setup
+ExecStart=@AZURE_NVME_ID_INSTALL_DIR@/azure-ephemeral-disk-setup
 RemainAfterExit=yes
 StandardOutput=journal+console
 StandardError=journal+console
