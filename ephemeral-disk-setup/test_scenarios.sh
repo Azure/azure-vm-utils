@@ -256,6 +256,18 @@ run_and_assert() {
     echo "✅ $TEST_COUNT $TEST: $actual_output (code=$actual_code)"
 }
 
+
+test_already_mounted_by_cloudinit() {
+    configure_scsi_resource_disk 1
+    configure_nvme_disks 1
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
+    echo "/dev/disk/cloud/azure_resource-part1    /mnt    auto    defaults,nofail,comment=cloudconfig     0       2" | tee -a /etc/fstab
+    mount /mnt
+
+    run_and_assert "Mounted /dev/disk/azure/resource at /mnt with fs=ext4" 0
+}
+
 test_format_failure_single_nvme() {
     configure_nvme_disks 1
 

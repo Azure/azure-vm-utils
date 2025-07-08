@@ -79,7 +79,9 @@ check_if_scsi_resource_device_needs_setup() {
     local TEMP_MOUNT_PATH UNEXPECTED_FILES
 
     TEMP_MOUNT_PATH="$(mktemp -d)"
-    mount -t ntfs -o ro "$partition" "$TEMP_MOUNT_PATH" || exit_failure "Mounting $partition as NTFS failed"
+    mount -t ntfs3 -o ro "$partition" "$TEMP_MOUNT_PATH" ||
+        mount -t ntfs -o ro "$partition" "$TEMP_MOUNT_PATH" || 
+            exit_failure "Mounting $partition as NTFS failed"
 
     mapfile -t UNEXPECTED_FILES < <(find "$TEMP_MOUNT_PATH" -mindepth 1 -maxdepth 1 \
         ! -iname 'dataloss_warning_readme.txt' \

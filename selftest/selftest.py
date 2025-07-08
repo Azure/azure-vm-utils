@@ -665,22 +665,6 @@ class ServiceInfo:
             ephemeral_service_failed=ephemeral_service_failed,
         )
 
-    def validate_ephemeral_disk_setup_service(self) -> None:
-        """Validate ephemeral disk setup service."""
-        if self.ephemeral_service_enabled:
-            assert (
-                self.ephemeral_service_active
-            ), f"{AZURE_EPHEMERAL_DISK_SETUP_SERVICE} enabled, but not active"
-            assert (
-                not self.ephemeral_service_failed
-            ), f"{AZURE_EPHEMERAL_DISK_SETUP_SERVICE} enabled, but failed"
-
-        logger.info("validate_ephemeral_disk_setup_service OK: %r", self)
-
-    def validate(self) -> None:
-        """Validate services."""
-        self.validate_ephemeral_disk_setup_service()
-
 
 @dataclass(eq=True, repr=True)
 class Mount:
@@ -1566,7 +1550,6 @@ class AzureVmUtilsValidator:
 
     def validate_services(self) -> None:
         """Validate services."""
-        self.service_info.validate()
         logger.info("validate_services OK: %r", self.service_info)
 
     def validate_sku_config(self) -> None:
