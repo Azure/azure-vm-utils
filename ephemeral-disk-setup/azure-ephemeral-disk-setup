@@ -169,6 +169,10 @@ if [[ -n "$EXISTING_MOUNT" ]]; then
         exit_success "Already mounted and configured in /etc/fstab, nothing to do"
     fi
 
+    if [[ -n "$EXISTING_FSTAB_MOUNT" && "$EXISTING_FSTAB_MOUNT" == *"comment=cloudconfig"* ]]; then
+        exit_failure "Mount point $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT is already mounted, likely by cloud-init which can be disabled via 'ln -sf /dev/null /etc/udev/rules.d/66-azure-ephemeral.rules'"
+    fi
+
     exit_failure "Mount point $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT is already mounted, perhaps by another service"
 fi
 

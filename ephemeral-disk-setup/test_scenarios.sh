@@ -256,18 +256,6 @@ run_and_assert() {
     echo "✅ $TEST_COUNT $TEST: $actual_output (code=$actual_code)"
 }
 
-
-test_already_mounted_by_cloudinit() {
-    configure_scsi_resource_disk 1
-    configure_nvme_disks 1
-    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
-
-    echo "/dev/disk/cloud/azure_resource-part1    /mnt    auto    defaults,nofail,comment=cloudconfig     0       2" | tee -a /etc/fstab
-    mount /mnt
-
-    run_and_assert "Mounted /dev/disk/azure/resource at /mnt with fs=ext4" 0
-}
-
 test_format_failure_single_nvme() {
     configure_nvme_disks 1
 
@@ -717,6 +705,17 @@ test_resource_unmanaged() {
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=false"
 
     run_and_assert "No local NVMe disks detected and AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=false, exiting without action" 0
+}
+
+test_resource_already_mounted_by_cloudinit() {
+    configure_scsi_resource_disk 1
+    configure_nvme_disks 1
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
+    echo "/dev/disk/cloud/azure_resource-part1    /mnt    auto    defaults,nofail,comment=cloudconfig     0       2"  >>/etc/fstab
+    mount /dev/disk/cloud/azure_resource-part1 /mnt
+
+    run_and_assert "Mount point /mnt is already mounted, likely by cloud-init which can be disabled via 'ln -sf /dev/null /etc/udev/rules.d/66-azure-ephemeral.rules'" 1
 }
 
 test_resource_with_extra_directory() {

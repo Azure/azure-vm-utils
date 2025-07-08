@@ -52,7 +52,7 @@ jobs:
               dnf install -y awk
               ;;
           esac
-          dnf install -y git sudo
+          dnf install -y git sudo util-linux
       - name: Checkout code
         uses: actions/checkout@v4
         with:
