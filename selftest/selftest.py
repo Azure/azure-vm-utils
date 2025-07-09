@@ -631,6 +631,7 @@ class ServiceInfo:
     ephemeral_service_enabled: bool
     ephemeral_service_active: bool
     ephemeral_service_failed: bool
+    ephemeral_service_journal: Optional[str] = None
 
     @classmethod
     def gather(cls) -> "ServiceInfo":
@@ -657,12 +658,24 @@ class ServiceInfo:
             )
             == "failed"
         )
+        ephemeral_service_journal =(
+            unchecked_run(
+                [
+                    "journalctl",
+                    "--no-pager",
+                    "--output=short-precise",
+                    "--unit",
+                    AZURE_EPHEMERAL_DISK_SETUP_SERVICE,
+                ]
+            )
+        )
 
         return cls(
             cloud_init_service_enabled=cloud_init_service_enabled,
             ephemeral_service_enabled=ephemeral_service_enabled,
             ephemeral_service_active=ephemeral_service_active,
             ephemeral_service_failed=ephemeral_service_failed,
+            ephemeral_service_journal=ephemeral_service_journal,
         )
 
 
@@ -739,16 +752,27 @@ class MountInfo:
         mnt_fstab = self.fstab_mounts.get("/mnt")
         mnt_kernel = self.kernel_mounts.get("/mnt")
 
-        cloud_init_resource_disk_link_exists = os.path.exists(
-            DEV_DISK_CLOUD_AZURE_RESOURCE
-        )
+        cloud_init_resource_disk_link_exists = os.path.exists(DEV_DISK_CLOUD_AZURE_RESOURCE)
         if service_info.ephemeral_service_enabled:
-            assert (
-                service_info.ephemeral_service_active
-            ), "azure-ephemeral-disk-setup service is enabled but not active"
-            assert (
-                not service_info.ephemeral_service_failed
-            ), "azure-ephemeral-disk-setup service is enabled but failed"
+            if cloud_init_resource_disk_link_exists:
+                # Expect failure if cloud-init symlink exists.
+                # This will need to be revisited in the future.
+                assert (
+                    service_info.ephemeral_service_failed
+                ), "azure-ephemeral-disk-setup service did not fail as expected: %r"  % (
+                    service_info.ephemeral_service_journal
+                )
+            else:
+                assert (
+                    service_info.ephemeral_service_active
+                ), "azure-ephemeral-disk-setup service is enabled but not active: %r" % (
+                    service_info.ephemeral_service_journal
+                )
+                assert (
+                    not service_info.ephemeral_service_failed
+                ), "azure-ephemeral-disk-setup service is enabled but failed: %r"  % (
+                    service_info.ephemeral_service_journal
+                )
 
         mount_expected = (
             (

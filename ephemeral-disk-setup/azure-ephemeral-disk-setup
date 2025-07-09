@@ -260,6 +260,13 @@ if [[ ${#DISKS[@]} -gt 1 && "$AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION" == "mdadm"
         "${DISKS[@]}" >&2 || exit_failure "Failed to create mdadm array with devices: ${DISKS[*]}"
     TARGET_DEVICE="$md"
     EXTRAS=" chunk=$AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK count=${#DISKS[@]}"
+
+    # mdadm has a fairly short timeout to wait for device so we must wait for udev to settle.
+    # [   11.467473] + mdadm --create /dev/md/azure-ephemeral-md_0 --level=0 --raid-devices=2 --metadata=1.2 --chunk=512K --name=azure-ephemeral-md /dev/disk/azure/local/by-serial/95fcd1d0adcd35f70001 /dev/disk/azure/local/by-serial/95fcd1d0adcd35f70002
+    # [   11.516972] mdadm: array /dev/md/azure-ephemeral-md_0 started.
+    # [   15.307223] mdadm: timeout waiting for /dev/md/azure-ephemeral-md_0
+    log "Waiting for udev to settle..."
+    udevadm settle || true
 else
     TARGET_DEVICE="${DISKS[0]}"
     EXTRAS=""
