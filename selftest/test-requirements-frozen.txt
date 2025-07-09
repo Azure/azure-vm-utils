@@ -28,4 +28,4 @@ tomli==2.2.1
 tomlkit==0.13.2
 types-requests==2.32.0.20241016
 typing_extensions==4.12.2
-urllib3==2.3.0
+urllib3==2.5.0
