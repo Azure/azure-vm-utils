@@ -1351,9 +1351,15 @@ class NetworkInfo:
         ):
             assert interface.ipv4_addrs, f"missing IPv4 addresses for {interface}"
         else:
-            assert (
-                not interface.ipv4_addrs
-            ), f"unexpected IPv4 addresses for {interface}"
+            # Due to https://github.com/systemd/systemd/issues/36997 there may be
+            # an IP assigned to VF. Log an error for now but do not assert until
+            # fix is widely available.
+            if interface.ipv4_addrs:
+                logger.error(
+                    "unexpected IPv4 addresses for %s: %r",
+                    interface.name,
+                    interface.ipv4_addrs,
+                )
 
         logger.info("validate_interface %s OK: %r", interface.name, interface)
 

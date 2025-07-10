@@ -76,23 +76,52 @@ check_if_block_device_needs_setup() {
 check_if_scsi_resource_device_needs_setup() {
     local disk="$1"
     local partition="$2"
-    local TEMP_MOUNT_PATH UNEXPECTED_FILES
 
-    TEMP_MOUNT_PATH="$(mktemp -d)"
-    mount -t ntfs3 -o ro "$partition" "$TEMP_MOUNT_PATH" ||
-        mount -t ntfs -o ro "$partition" "$TEMP_MOUNT_PATH" || 
-            exit_failure "Mounting $partition as NTFS failed"
+    local type=$(blkid -o value -s TYPE "$partition" 2>/dev/null)
+    if [[ "$type" != "ntfs" ]]; then
+        exit_failure "Resource disk partition $partition type=$type is not 'ntfs'"
+    fi
 
-    mapfile -t UNEXPECTED_FILES < <(find "$TEMP_MOUNT_PATH" -mindepth 1 -maxdepth 1 \
+    local label=$(blkid -o value -s LABEL "$partition" 2>/dev/null)
+    if [[ "$label" != "Temporary Storage" ]]; then
+        exit_failure "Resource disk partition $partition label=$label is not 'Temporary Storage'"
+    fi
+
+    # Some distributions only have ntfs3 and some have neither (e.g. RHEL 9.4).
+    # If we can't mount it as ntfs3 or ntfs, we assume it is safe to reformat.
+    local temp_mount_path="$(mktemp -d)"
+    local mount_rc=0
+    local mount_output
+    mount_output=$(mount -t ntfs3 "$partition" "$temp_mount_path" 2>&1) || mount_rc=$?
+    log "Mount (ntfs3) exited with $mount_rc: $mount_output"
+    if [[ $mount_rc -ne 0 ]]; then
+        if [[ "$mount_output" == *"unknown filesystem type 'ntfs3'"* ]]; then
+            mount_rc=0
+            mount_output=$(mount -t ntfs "$partition" "$temp_mount_path" 2>&1) || mount_rc=$?
+            log "Mount (ntfs) exited with code=$mount_rc: $mount_output"
+            if [[ $mount_rc -ne 0 ]]; then
+                if [[ "$mount_output" == *"unknown filesystem type 'ntfs'"* ]]; then
+                    log "WARNING: failed to mount $partition due to lack of ntfs support, assuming it is empty and safe for reformat"
+                    return 0
+                fi
+                exit_failure "Mounting $partition as ntfs failed with: $mount_output"
+            fi
+        else
+            exit_failure "Mounting $partition as ntfs3 failed with: $mount_output"
+        fi
+    fi
+
+    local unexpected_files
+    mapfile -t unexpected_files < <(find "$temp_mount_path" -mindepth 1 -maxdepth 1 \
         ! -iname 'dataloss_warning_readme.txt' \
         ! -iname 'system volume information' \
         -printf '%P\n')
 
-    umount "$TEMP_MOUNT_PATH" || exit_failure "Unmounting NTFS $partition failed"
-    rmdir "$TEMP_MOUNT_PATH"
+    umount "$temp_mount_path" || exit_failure "Unmounting NTFS $partition failed"
+    rmdir "$temp_mount_path"
 
-    if [[ ${#UNEXPECTED_FILES[@]} -gt 0 ]]; then
-        exit_failure "SCSI resource disk $disk is NTFS formatted but contains unexpected files or folders: ${UNEXPECTED_FILES[*]}"
+    if [[ ${#unexpected_files[@]} -gt 0 ]]; then
+        exit_failure "SCSI resource disk $disk is NTFS formatted but contains unexpected files or folders: ${unexpected_files[*]}"
     fi
 
     log "SCSI resource disk $disk is NTFS formatted and safe to reformat"
@@ -288,6 +317,10 @@ fi
 
 log "Formatting $TARGET_DEVICE with $AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE filesystem"
 $MKFS $MKFS_FLAGS "$TARGET_DEVICE" >&2 || exit_failure "Formatting $TARGET_DEVICE failed"
+
+# Ensure the partition table is updated and udev rules are applied.
+partprobe "$TARGET_DEVICE" || true
+udevadm settle || true
 
 # Update /etc/fstab to persist the mount and cleanup any old entries.
 if [[ ! -w /etc/fstab ]]; then

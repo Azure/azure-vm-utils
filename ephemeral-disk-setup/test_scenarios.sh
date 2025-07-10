@@ -196,7 +196,7 @@ reset_mkfs_xfs() {
 reset_ntfs_resource_disk() {
     parted -s "$RESOURCE_DISK" mklabel gpt mkpart primary ntfs 0% 100%
     partprobe_safe
-    mkfs.ntfs -q --quick "${RESOURCE_DISK}-part1"
+    mkfs.ntfs -q --quick "${RESOURCE_DISK}-part1" --label "Temporary Storage"
     mount "${RESOURCE_DISK}-part1" /mnt
     echo "This is a test NTFS file" >/mnt/dataloss_warning_readme.txt
     umount /mnt
@@ -256,8 +256,24 @@ run_and_assert() {
     echo "✅ $TEST_COUNT $TEST: $actual_output (code=$actual_code)"
 }
 
+
+test_resource_managed_missing_ntfs_drivers() {
+    configure_nvme_disks 0
+    configure_scsi_resource_disk 1
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
+    echo -e '#!/bin/bash\n[[ "$2" == "ntfs" || "$2" == "ntfs3" ]] && { echo "mount: unknown filesystem type '\''$2'\''" >&2; exit 32; } || exec /usr/bin/mount "$@"' > "$FAKE_BIN_PATH/mount"
+    chmod +x "$FAKE_BIN_PATH/mount"
+    hash -r
+
+    local resolved="$(readlink -f "${RESOURCE_DISK}-part1")"
+    run_and_assert "Mounted /dev/disk/azure/resource at /mnt with fs=ext4" 0
+    assert_regex_in_log "WARNING: failed to mount $resolved due to lack of ntfs support, assuming it is empty and safe for reformat"
+}
+
 test_format_failure_single_nvme() {
     configure_nvme_disks 1
+    configure_scsi_resource_disk 0
 
     cp /bin/false "$FAKE_BIN_PATH/mkfs.ext4"
     hash -r
@@ -267,6 +283,7 @@ test_format_failure_single_nvme() {
 
 test_format_failure_aggregated_nvme() {
     configure_nvme_disks 2
+    configure_scsi_resource_disk 0
 
     cp /bin/false "$FAKE_BIN_PATH/mkfs.ext4"
     hash -r
@@ -287,6 +304,7 @@ test_format_failure_scsi_resource() {
 
 test_idempotent_rerun() {
     configure_nvme_disks 1
+    configure_scsi_resource_disk 0
 
     run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=ext4" 0
     run_and_assert "Already mounted and configured in /etc/fstab, nothing to do" 0
@@ -294,7 +312,8 @@ test_idempotent_rerun() {
 
 test_fstab_readonly() {
     configure_nvme_disks 1
-    configure_conf
+    configure_scsi_resource_disk 0
+
     disable_write_fstab
 
     run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=ext4" 0
@@ -303,7 +322,9 @@ test_fstab_readonly() {
 
 test_fstab_readonly_reboot_single_nvme() {
     configure_nvme_disks 1
+    configure_scsi_resource_disk 0
     configure_conf
+
     disable_write_fstab
 
     run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=ext4" 0
@@ -317,7 +338,8 @@ test_fstab_readonly_reboot_single_nvme() {
 
 test_fstab_readonly_reboot_already_mounted_elsewhere() {
     configure_nvme_disks 1
-    configure_conf
+    configure_scsi_resource_disk 0
+
     disable_write_fstab
 
     run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=ext4" 0
@@ -329,7 +351,9 @@ test_fstab_readonly_reboot_already_mounted_elsewhere() {
 
 test_fstab_readonly_reboot_aggregated_nvme() {
     configure_nvme_disks 2
-    configure_conf
+    configure_scsi_resource_disk 0
+
+
     disable_write_fstab
 
     run_and_assert "Mounted /dev/md/azure-ephemeral-md_0 at /mnt with fs=ext4 chunk=512K count=2" 0
@@ -343,6 +367,8 @@ test_fstab_readonly_reboot_aggregated_nvme() {
 
 test_fstab_readonly_idempotent_single_nvme() {
     configure_nvme_disks 1
+    configure_scsi_resource_disk 0
+
     disable_write_fstab
 
     run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=ext4" 0
@@ -357,6 +383,8 @@ test_fstab_readonly_idempotent_single_nvme() {
 
 test_fstab_readonly_idempotent_aggregated_nvme() {
     configure_nvme_disks 2
+    configure_scsi_resource_disk 0
+
     disable_write_fstab
 
     run_and_assert "Mounted /dev/md/azure-ephemeral-md_0 at /mnt with fs=ext4 chunk=512K count=2" 0
@@ -370,8 +398,10 @@ test_fstab_readonly_idempotent_aggregated_nvme() {
 }
 
 test_fstab_conflicting_entry() {
-    echo "/dev/fake /mnt xfs defaults,comment=otherservice 0 2" >>/etc/fstab
     configure_nvme_disks 1
+    configure_scsi_resource_disk 0
+
+    echo "/dev/fake /mnt xfs defaults,comment=otherservice 0 2" >>/etc/fstab
 
     run_and_assert "Aborting due to conflicting fstab entry for /mnt with source=/dev/fake target=/mnt fstype=xfs options=defaults,comment=otherservice" 1
 }
@@ -380,6 +410,7 @@ test_broken_symlink_resource() {
     configure_nvme_disks 0
     configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
     ln -sf /dev/nonexistent /dev/disk/azure/resource
 
     run_and_assert "Not a valid block device: /dev/disk/azure/resource" 1
@@ -387,14 +418,18 @@ test_broken_symlink_resource() {
 
 test_broken_symlink_no_nvme() {
     configure_nvme_disks 0
+    configure_scsi_resource_disk 0
+
     ln -sf /dev/nonexistent /dev/disk/azure/local/by-serial/fake
 
-    run_and_assert "No local NVMe disks detected and AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=false, exiting without action" 0
+    run_and_assert "No local NVMe disks detected, exiting without action" 0
     assert_regex_in_log "Ignoring /dev/disk/azure/local/by-serial/fake, not a block device"
 }
 
 test_broken_symlink_single_nvme() {
     configure_nvme_disks 1
+    configure_scsi_resource_disk 0
+
     ln -sf /dev/nonexistent /dev/disk/azure/local/by-serial/fake
 
     run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=ext4" 0
@@ -403,6 +438,8 @@ test_broken_symlink_single_nvme() {
 
 test_broken_symlink_multiple_nvme() {
     configure_nvme_disks 2
+    configure_scsi_resource_disk 0
+
     ln -sf /dev/nonexistent /dev/disk/azure/local/by-serial/fake
     ln -sf /dev/nonexistent /dev/disk/azure/local/by-serial/fake2
 
@@ -412,24 +449,24 @@ test_broken_symlink_multiple_nvme() {
 }
 
 test_custom_mount() {
-    configure_scsi_resource_disk 1
     configure_nvme_disks 0
+    configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true" "AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT=/mnt/custom"
 
     run_and_assert "Mounted /dev/disk/azure/resource at /mnt/custom with fs=ext4" 0
 }
 
 test_custom_mount_deep() {
-    configure_scsi_resource_disk 1
     configure_nvme_disks 0
+    configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true" "AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT=/mnt/foo/bar/custom"
 
      run_and_assert "Mounted /dev/disk/azure/resource at /mnt/foo/bar/custom with fs=ext4" 0
 }
 
 test_custom_mdadm_chunk() {
-    configure_scsi_resource_disk 0
     configure_nvme_disks 2
+    configure_scsi_resource_disk 0
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK=1024K"
 
     run_and_assert "Mounted /dev/md/azure-ephemeral-md_0 at /mnt with fs=ext4 chunk=1024K count=2" 0
@@ -437,6 +474,7 @@ test_custom_mdadm_chunk() {
 
 test_custom_mdam_name() {
     configure_nvme_disks 2
+    configure_scsi_resource_disk 0
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME=myraid"
 
     run_and_assert "Mounted /dev/md/myraid_0 at /mnt with fs=ext4 chunk=512K count=2" 0
@@ -444,6 +482,7 @@ test_custom_mdam_name() {
 
 test_custom_fs_xfs_single() {
     configure_nvme_disks 1
+    configure_scsi_resource_disk 0
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE=xfs"
 
     run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=xfs" 0
@@ -451,6 +490,7 @@ test_custom_fs_xfs_single() {
 
 test_custom_fs_xfs_aggregated() {
     configure_nvme_disks 2
+    configure_scsi_resource_disk 0
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE=xfs"
 
     run_and_assert "Mounted /dev/md/azure-ephemeral-md_0 at /mnt with fs=xfs chunk=512K count=2" 0
@@ -506,6 +546,7 @@ test_missing_mdadm() {
 
 test_mount_point_is_a_file() {
     configure_nvme_disks 1
+    configure_scsi_resource_disk 0
 
     local temp_path
     temp_path="$(mktemp)"
@@ -517,6 +558,7 @@ test_mount_point_is_a_file() {
 
 test_mount_point_is_a_symlink() {
     configure_nvme_disks 1
+    configure_scsi_resource_disk 0
 
     local temp_path
     temp_path="$(mktemp)"
@@ -534,22 +576,23 @@ test_mount_point_is_a_symlink() {
 }
 
 test_no_nvme_or_managed_resource_disks() {
-    configure_scsi_resource_disk 0
     configure_nvme_disks 0
+    configure_scsi_resource_disk 0
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     run_and_assert "No local NVMe or SCSI resource disks detected, exiting without action" 0
 }
 
 test_no_nvme_or_unmanaged_resource_disks() {
-    configure_scsi_resource_disk 0
     configure_nvme_disks 0
+    configure_scsi_resource_disk 0
 
     run_and_assert "No local NVMe disks detected, exiting without action" 0
 }
 
 test_nvme_aggregation_disabled() {
     configure_nvme_disks 2
+    configure_scsi_resource_disk 0
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION=none"
 
     run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=ext4" 0
@@ -557,62 +600,62 @@ test_nvme_aggregation_disabled() {
 }
 
 test_nvme_aggregation_max() {
-    configure_scsi_resource_disk 0
     configure_nvme_disks ${#NVME_DISKS[@]}
+    configure_scsi_resource_disk 0
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     run_and_assert "Mounted /dev/md/azure-ephemeral-md_0 at /mnt with fs=ext4 chunk=512K count=${#NVME_DISKS[@]}" 0
 }
 
 test_nvme_aggregation_max_with_managed_resource() {
-    configure_scsi_resource_disk 1
     configure_nvme_disks ${#NVME_DISKS[@]}
+    configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     run_and_assert "Mounted /dev/md/azure-ephemeral-md_0 at /mnt with fs=ext4 chunk=512K count=${#NVME_DISKS[@]}" 0
 }
 
 test_nvme_model_fallback_detection() {
-    configure_scsi_resource_disk 0
     configure_nvme_disks 0
+    configure_scsi_resource_disk 0
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_NVME_MODEL_DETECTION=true"
 
     run_and_assert "Mounted /dev/md/azure-ephemeral-md_0 at /mnt with fs=ext4 chunk=512K count=${#NVME_DISKS[@]}" 0
 }
 
 test_nvme_aggregation_without_managed_resource() {
-    configure_scsi_resource_disk 0
     configure_nvme_disks 2
+    configure_scsi_resource_disk 0
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     run_and_assert "Mounted /dev/md/azure-ephemeral-md_0 at /mnt with fs=ext4 chunk=512K count=2" 0
 }
 
 test_nvme_aggregation_with_managed_resource() {
-    configure_scsi_resource_disk 1
     configure_nvme_disks 2
+    configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     run_and_assert "Mounted /dev/md/azure-ephemeral-md_0 at /mnt with fs=ext4 chunk=512K count=2" 0
 }
 
 test_nvme_already_formatted() {
-    mkfs.ext4 -q -F "${NVME_DISKS[0]}"
-
-    configure_scsi_resource_disk 0
     configure_nvme_disks 1
+    configure_scsi_resource_disk 0
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
+    mkfs.ext4 -q -F "${NVME_DISKS[0]}"
 
     run_and_assert "Device ${NVME_DISKS[0]} contains a partition table or is already formatted" 1
 }
 
 test_nvme_already_mounted() {
+    configure_nvme_disks 1
+    configure_scsi_resource_disk 0
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
     mkfs.ext4 -q -F "${NVME_DISKS[0]}"
     mount "${NVME_DISKS[0]}" /media
-
-    configure_scsi_resource_disk 0
-    configure_nvme_disks 1
-    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     run_and_assert "Device ${NVME_DISKS[0]} is already mounted or in use" 1
 }
@@ -668,48 +711,60 @@ test_nvme_already_partitioned_single_and_formatted() {
 }
 
 test_nvme_single() {
-    configure_scsi_resource_disk 0
     configure_nvme_disks 1
+    configure_scsi_resource_disk 0
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=ext4" 0
 }
 
 test_nvme_single_and_managed_resource() {
-    configure_scsi_resource_disk 1
     configure_nvme_disks 1
+    configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=ext4" 0
 }
 
 test_nvme_single_and_unmanaged_resource() {
-    configure_scsi_resource_disk 1
     configure_nvme_disks 1
+    configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=false"
 
     run_and_assert "Mounted ${NVME_DISKS[0]} at /mnt with fs=ext4" 0
 }
 
 test_resource_managed() {
-    configure_scsi_resource_disk 1
     configure_nvme_disks 0
+    configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     run_and_assert "Mounted /dev/disk/azure/resource at /mnt with fs=ext4" 0
 }
 
-test_resource_unmanaged() {
-    configure_scsi_resource_disk 1
+test_resource_ntfs_wrong_label() {
     configure_nvme_disks 0
+    configure_scsi_resource_disk 1
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
+    local label="NotTemporaryStorage"
+    local resolved="$(readlink -f "${RESOURCE_DISK}-part1")"
+    mkfs.ntfs -q --quick "${RESOURCE_DISK}-part1" --label "$label"
+
+    run_and_assert "Resource disk partition $resolved label=$label is not 'Temporary Storage'" 1
+}
+
+test_resource_unmanaged() {
+    configure_nvme_disks 0
+    configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=false"
 
     run_and_assert "No local NVMe disks detected and AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=false, exiting without action" 0
 }
 
 test_resource_already_mounted_by_cloudinit() {
-    configure_scsi_resource_disk 1
     configure_nvme_disks 1
+    configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     echo "/dev/disk/cloud/azure_resource-part1    /mnt    auto    defaults,nofail,comment=cloudconfig     0       2"  >>/etc/fstab
@@ -731,82 +786,79 @@ test_resource_with_extra_directory() {
 }
 
 test_resource_with_extra_file() {
+    configure_nvme_disks 0
+    configure_scsi_resource_disk 1
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
     mount "${RESOURCE_DISK}-part1" /mnt
     touch /mnt/badfile.txt
     umount /mnt
-
-    configure_scsi_resource_disk 1
-    configure_nvme_disks 0
-    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     run_and_assert "SCSI resource disk /dev/disk/azure/resource is NTFS formatted but contains unexpected files or folders: badfile.txt" 1
 }
 
 test_resource_already_formatted_non_ntfs() {
-    reset_disk "$RESOURCE_DISK"
-    partprobe_safe
-    mkfs.ext4 -q -F "$RESOURCE_DISK"
-
-    configure_scsi_resource_disk 1
     configure_nvme_disks 0
+    configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
+    mkfs.ext4 -q -F "$RESOURCE_DISK-part1"
 
     run_and_assert "Device /dev/disk/azure/resource contains a partition table or is already formatted" 1
 }
 
 test_resource_already_formatted_ntfs_without_partition() {
-    reset_disk "$RESOURCE_DISK"
-    partprobe_safe
-    mkfs.ntfs -q --quick --force "${RESOURCE_DISK}"
-
-    configure_scsi_resource_disk 1
     configure_nvme_disks 0
+    configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
+    mkfs.ntfs -q --quick --force "${RESOURCE_DISK}" --label "Temporary Storage"
+    partprobe_safe
 
     run_and_assert "Device /dev/disk/azure/resource contains a partition table or is already formatted" 1
 }
 
 test_resource_already_mounted() {
+    configure_nvme_disks 0
+    configure_scsi_resource_disk 1
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
     mkfs.ext4 -q -F "$RESOURCE_DISK"
     mount "$RESOURCE_DISK" /media
-
-    configure_scsi_resource_disk 1
-    configure_nvme_disks 0
-    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     run_and_assert "Device /dev/disk/azure/resource is already mounted or in use" 1
 }
 
 test_resource_already_partitioned_multiple() {
+    configure_nvme_disks 0
+    configure_scsi_resource_disk 1
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
     parted -s "$RESOURCE_DISK" mklabel gpt mkpart primary ext4 0% 50%
     parted -s "$RESOURCE_DISK" mkpart primary ext4 50% 100%
     partprobe_safe
 
-    configure_scsi_resource_disk 1
-    configure_nvme_disks 0
-    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
-
     run_and_assert "Device /dev/disk/azure/resource has 2 partition(s)" 1
 }
 
-test_resource_already_partitioned_single_formatted() {
-    mkfs.ext4 -q -F "${RESOURCE_DISK}-part1"
-
-    configure_scsi_resource_disk 1
+test_resource_existing_partition_reformatted() {
     configure_nvme_disks 0
+    configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
+    mkfs.ext4 -q -F "${RESOURCE_DISK}-part1"
 
     local resolved="$(readlink -f "${RESOURCE_DISK}-part1")"
     run_and_assert "Mounting ${resolved} as NTFS failed" 1
 }
 
 test_resource_unformatted() {
+    configure_nvme_disks 0
+    configure_scsi_resource_disk 1
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+
     reset_disk "$RESOURCE_DISK"
     partprobe_safe
-
-    configure_scsi_resource_disk 1
-    configure_nvme_disks 0
-    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
 
     run_and_assert "Mounted /dev/disk/azure/resource at /mnt with fs=ext4" 0
 }
