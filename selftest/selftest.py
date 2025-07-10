@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import subprocess
 import time
 import urllib.error
@@ -24,13 +25,17 @@ logger = logging.getLogger("selftest")
 
 # pylint: disable=broad-exception-caught
 # pylint: disable=line-too-long
-# pylint: disable=too-many-lines
+# pylint: disable=too-many-branches
 # pylint: disable=too-many-instance-attributes
 # pylint: disable=too-many-lines
 # pylint: disable=too-many-locals
 
 SYS_CLASS_BLOCK = "/sys/class/block"
 SYS_CLASS_NET = "/sys/class/net"
+AZURE_EPHEMERAL_DISK_SETUP_CONF = "/etc/azure-ephemeral-disk-setup.conf"
+AZURE_EPHEMERAL_DISK_SETUP_SERVICE = "azure-ephemeral-disk-setup.service"
+DEV_DISK_AZURE_RESOURCE = "/dev/disk/azure/resource"
+DEV_DISK_CLOUD_AZURE_RESOURCE = "/dev/disk/cloud/azure_resource"
 
 
 @dataclass(eq=True, repr=True)
@@ -62,6 +67,12 @@ class V6SkuConfig(SkuConfig):
 def gb_to_gib(size_gb: int) -> int:
     """Roughly convert GB to GiB as sizes are documented in both ways."""
     return int(size_gb * (1000**3) / (1024**3))
+
+
+def unchecked_run(cmd) -> str:
+    """ "Run a command without checking the return code and return stripped output."""
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    return result.stdout.strip()
 
 
 SKU_CONFIGS = {
@@ -391,6 +402,8 @@ def get_root_block_device() -> str:
 def get_scsi_resource_disk() -> Optional[str]:
     """Get the SCSI resource disk device."""
     paths = [
+        # azure resource disk
+        "/dev/disk/azure/resource",
         # cloud-init udev rules
         "/dev/disk/cloud/azure_resource",
         # gen2
@@ -414,9 +427,6 @@ def get_scsi_resource_disk() -> Optional[str]:
 
     logger.info("no SCSI resource disk found")
     return None
-
-
-DEV_DISK_AZURE_RESOURCE = "/dev/disk/azure/resource"
 
 
 @dataclass(eq=True, repr=True)
@@ -520,6 +530,321 @@ class DiskInfo:
 
         logger.info("disks info: %r", disk_info)
         return disk_info
+
+
+@dataclass(eq=True, repr=True)
+class AzureEphemeralDiskConfig:
+    """Parsed /etc/azure-ephemeral-disk-setup.conf config."""
+
+    aggregation: str = "mdadm"
+    fs_type: str = "ext4"
+    mdadm_chunk: str = "512K"
+    mdadm_name: str = "azure-ephemeral-md"
+    mount_point: str = "/mnt"
+    scsi_resource: bool = False
+    nvme_model_detection: bool = False
+
+    @staticmethod
+    def _parse_bool(value: str) -> Optional[bool]:
+        if value == "true":
+            return True
+        if value == "false":
+            return False
+        return None
+
+    @classmethod
+    def gather(cls) -> "AzureEphemeralDiskConfig":
+        """Parse service config."""
+        aggregation = "mdadm"
+        fs_type = "ext4"
+        mdadm_chunk = "512K"
+        mdadm_name = "azure-ephemeral-md"
+        mount_point = "/mnt"
+        scsi_resource = False
+        nvme_model_detection = False
+
+        config_path = Path(AZURE_EPHEMERAL_DISK_SETUP_CONF)
+        if not config_path.exists():
+            return cls()
+
+        config_str = config_path.read_text(encoding="utf-8")
+        for line in config_str.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            key, value = line.split("=", 1)
+            value = shlex.split(value, posix=True)[0]
+            if key == "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION":
+                if value not in {"mdadm", "none"}:
+                    raise ValueError(f"Invalid aggregation: {value}")
+                aggregation = value
+            elif key == "AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE":
+                if value not in {"ext4", "xfs"}:
+                    raise ValueError(f"Invalid filesystem type: {value}")
+                fs_type = value
+            elif key == "AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK":
+                if not re.match(r"^\d+[KMGT]$", value, re.IGNORECASE):
+                    raise ValueError(f"Invalid mdadm chunk size: {value}")
+                mdadm_chunk = value
+            elif key == "AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME":
+                if not re.match(r"^[a-zA-Z0-9_-]+$", value):
+                    raise ValueError(f"Invalid mdadm array name: {value}")
+                mdadm_name = value
+            elif key == "AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT":
+                if not os.path.isabs(value) or " " in value:
+                    raise ValueError(f"Invalid mount point: {value}")
+                mount_point = value
+            elif key == "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE":
+                value_bool = cls._parse_bool(value)
+                if value_bool is None:
+                    raise ValueError(f"Invalid boolean for scsi_resource: {value}")
+                scsi_resource = value_bool
+            elif key == "AZURE_EPHEMERAL_DISK_SETUP_NVME_MODEL_DETECTION":
+                value_bool = cls._parse_bool(value)
+                if value_bool is None:
+                    raise ValueError(
+                        f"Invalid boolean for nvme_model_detection: {value}"
+                    )
+                nvme_model_detection = value_bool
+            else:
+                raise ValueError(
+                    f"Unexpected key={key} line in {AZURE_EPHEMERAL_DISK_SETUP_CONF}: {line}"
+                )
+
+        return cls(
+            aggregation=aggregation,
+            fs_type=fs_type,
+            mdadm_chunk=mdadm_chunk,
+            mdadm_name=mdadm_name,
+            mount_point=mount_point,
+            scsi_resource=scsi_resource,
+            nvme_model_detection=nvme_model_detection,
+        )
+
+
+@dataclass(eq=True, repr=True)
+class ServiceInfo:
+    """Status of various system services."""
+
+    cloud_init_service_enabled: bool
+    ephemeral_service_enabled: bool
+    ephemeral_service_active: bool
+    ephemeral_service_failed: bool
+    ephemeral_service_journal: Optional[str] = None
+
+    @classmethod
+    def gather(cls) -> "ServiceInfo":
+        """Gather information about necessary system services."""
+        cloud_init_service_enabled = (
+            unchecked_run(["systemctl", "is-enabled", "cloud-init-local.service"])
+            == "enabled"
+        )
+        ephemeral_service_enabled = (
+            unchecked_run(
+                ["systemctl", "is-enabled", AZURE_EPHEMERAL_DISK_SETUP_SERVICE]
+            )
+            == "enabled"
+        )
+        ephemeral_service_active = (
+            unchecked_run(
+                ["systemctl", "is-active", AZURE_EPHEMERAL_DISK_SETUP_SERVICE]
+            )
+            == "active"
+        )
+        ephemeral_service_failed = (
+            unchecked_run(
+                ["systemctl", "is-failed", AZURE_EPHEMERAL_DISK_SETUP_SERVICE]
+            )
+            == "failed"
+        )
+        ephemeral_service_journal =(
+            unchecked_run(
+                [
+                    "journalctl",
+                    "--no-pager",
+                    "--output=short-precise",
+                    "--unit",
+                    AZURE_EPHEMERAL_DISK_SETUP_SERVICE,
+                ]
+            )
+        )
+
+        return cls(
+            cloud_init_service_enabled=cloud_init_service_enabled,
+            ephemeral_service_enabled=ephemeral_service_enabled,
+            ephemeral_service_active=ephemeral_service_active,
+            ephemeral_service_failed=ephemeral_service_failed,
+            ephemeral_service_journal=ephemeral_service_journal,
+        )
+
+
+@dataclass(eq=True, repr=True)
+class Mount:
+    """Mount parameters."""
+
+    target: str
+    source: Optional[str] = None
+    fstype: Optional[str] = None
+    options: Optional[str] = None
+    rest: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(eq=True, repr=True)
+class MountInfo:
+    """Information about mounted filesystems from kernel and fstab sources."""
+
+    fstab_mounts: Dict[str, Mount] = field(default_factory=dict)
+    kernel_mounts: Dict[str, Mount] = field(default_factory=dict)
+
+    @classmethod
+    def gather(cls) -> "MountInfo":
+        """Gather mount info from both kernel and fstab."""
+        return cls(
+            kernel_mounts=cls._gather_from_findmnt(mode="kernel"),
+            fstab_mounts=cls._gather_from_findmnt(mode="fstab"),
+        )
+
+    @staticmethod
+    def _gather_from_findmnt(mode: str) -> Dict[str, Mount]:
+        """Helper to run findmnt --json --<mode> and parse output."""
+        assert mode in ("fstab", "kernel")
+        cmd = ["findmnt", "--json", f"--{mode}"]
+        result = subprocess.run(cmd, capture_output=True, check=True)
+        data = json.loads(result.stdout)
+
+        mounts: Dict[str, Mount] = {}
+
+        def add_mounts(filesystems):
+            for fs in filesystems:
+                target = fs.get("target")
+                if not target:
+                    continue
+
+                mounts[target] = Mount(
+                    target=target,
+                    source=fs.get("source"),
+                    fstype=fs.get("fstype"),
+                    options=fs.get("options"),
+                    rest={
+                        k: v
+                        for k, v in fs.items()
+                        if k
+                        not in {"target", "source", "fstype", "options", "children"}
+                    },
+                )
+
+                # Recurse into children if they exist
+                children = fs.get("children", [])
+                if isinstance(children, list):
+                    add_mounts(children)
+
+        add_mounts(data.get("filesystems", []))
+        return mounts
+
+    def validate_ephemeral_mount(
+        self,
+        disk_info: DiskInfo,
+        azure_ephemeral_disk_config: AzureEphemeralDiskConfig,
+        service_info: ServiceInfo,
+    ) -> None:
+        """Validate ephemeral disk mount."""
+        mnt_fstab = self.fstab_mounts.get("/mnt")
+        mnt_kernel = self.kernel_mounts.get("/mnt")
+
+        cloud_init_resource_disk_link_exists = os.path.exists(DEV_DISK_CLOUD_AZURE_RESOURCE)
+        if service_info.ephemeral_service_enabled:
+            if cloud_init_resource_disk_link_exists:
+                # Expect failure if cloud-init symlink exists.
+                # This will need to be revisited in the future.
+                assert (
+                    service_info.ephemeral_service_failed
+                ), "azure-ephemeral-disk-setup service did not fail as expected: %r"  % (
+                    service_info.ephemeral_service_journal
+                )
+            else:
+                assert (
+                    service_info.ephemeral_service_active
+                ), "azure-ephemeral-disk-setup service is enabled but not active: %r" % (
+                    service_info.ephemeral_service_journal
+                )
+                assert (
+                    not service_info.ephemeral_service_failed
+                ), "azure-ephemeral-disk-setup service is enabled but failed: %r"  % (
+                    service_info.ephemeral_service_journal
+                )
+
+        mount_expected = (
+            (
+                disk_info.scsi_resource_disk
+                and cloud_init_resource_disk_link_exists
+                and service_info.cloud_init_service_enabled
+            )
+            or (
+                disk_info.scsi_resource_disk
+                and azure_ephemeral_disk_config.scsi_resource
+                and service_info.ephemeral_service_active
+            )
+            or (disk_info.nvme_local_disks and service_info.ephemeral_service_active)
+        )
+        if mount_expected:
+            assert (
+                mnt_fstab and mnt_fstab.options and mnt_fstab.source
+            ), f"no fstab mount found for /mnt: {self.fstab_mounts}"
+            assert (
+                mnt_kernel and mnt_kernel.options and mnt_kernel.source
+            ), f"no kernel mount found for /mnt: {self.kernel_mounts}"
+
+            # Assume cloud-init manages SCSI resource disk if cloud-init's symlink is present.
+            if (
+                cloud_init_resource_disk_link_exists
+                and service_info.cloud_init_service_enabled
+            ):
+                assert (
+                    "comment=cloudconfig" in mnt_fstab.options
+                ), f"expected comment=cloudconfig in fstab options for /mnt: {mnt_fstab.options}"
+            else:
+                assert (
+                    mnt_fstab.options
+                    == "defaults,nofail,comment=azure-ephemeral-disk-setup"
+                ), f"unexpected fstab options for /mnt: {mnt_fstab.options}"
+
+                if len(disk_info.nvme_local_disks) > 1:
+                    assert (
+                        mnt_fstab.source == "/dev/md/azure-ephemeral-md_0"
+                    ), f"expected md fstab source for /mnt: {mnt_fstab.source}"
+                elif len(disk_info.nvme_local_disks) == 1:
+                    assert mnt_fstab.source.startswith(
+                        "/dev/disk/azure/local/by-serial/"
+                    ), f"expected local NVMe fstab source for /mnt: {mnt_fstab.source}"
+                else:
+                    assert (
+                        mnt_fstab.source == DEV_DISK_AZURE_RESOURCE
+                    ), f"unexpected fstab source for /mnt: {mnt_fstab.source}"
+
+            assert mnt_kernel.options and (
+                "rw" in mnt_kernel.options
+            ), f"missing rw in fstab options: {mnt_kernel.options}"
+        else:
+            if mnt_fstab:
+                assert mnt_fstab.options and (
+                    "comment=cloudconfig" in mnt_fstab.options
+                ), f"unexpected fstab mount for /mnt: {mnt_fstab}"
+
+            assert not mnt_kernel, f"unexpected kernel mount for /mnt: {mnt_kernel}"
+
+        logger.info("validate_ephemeral_mount OK: %r", self)
+
+    def validate(
+        self,
+        disk_info: DiskInfo,
+        azure_ephemeral_disk_config: AzureEphemeralDiskConfig,
+        service_info: ServiceInfo,
+    ) -> None:
+        """Validate mounts."""
+        self.validate_ephemeral_mount(
+            disk_info, azure_ephemeral_disk_config, service_info
+        )
 
 
 @dataclass
@@ -1026,9 +1351,15 @@ class NetworkInfo:
         ):
             assert interface.ipv4_addrs, f"missing IPv4 addresses for {interface}"
         else:
-            assert (
-                not interface.ipv4_addrs
-            ), f"unexpected IPv4 addresses for {interface}"
+            # Due to https://github.com/systemd/systemd/issues/36997 there may be
+            # an IP assigned to VF. Log an error for now but do not assert until
+            # fix is widely available.
+            if interface.ipv4_addrs:
+                logger.error(
+                    "unexpected IPv4 addresses for %s: %r",
+                    interface.name,
+                    interface.ipv4_addrs,
+                )
 
         logger.info("validate_interface %s OK: %r", interface.name, interface)
 
@@ -1052,9 +1383,12 @@ class AzureVmUtilsValidator:
         skip_imds_validation: bool = False,
         skip_udev_validation: bool = False,
     ) -> None:
+        self.azure_ephemeral_disk_config = AzureEphemeralDiskConfig.gather()
         self.azure_nvme_id_info = AzureNvmeIdInfo.gather()
         self.disk_info = DiskInfo.gather()
+        self.mount_info = MountInfo.gather()
         self.net_info = NetworkInfo.gather()
+        self.service_info = ServiceInfo.gather()
         self.skip_imds_validation = skip_imds_validation
         self.skip_udev_validation = skip_udev_validation
 
@@ -1178,7 +1512,7 @@ class AzureVmUtilsValidator:
 
     def validate_dev_disk_azure_links_resource(self) -> None:
         """Validate /dev/disk/azure/resource link."""
-        resource_disk = "/dev/disk/azure/resource"
+        resource_disk = DEV_DISK_AZURE_RESOURCE
         expected = (self.sku_config and self.sku_config.temp_disk_size_gib) or bool(
             self.disk_info.scsi_resource_disk
         )
@@ -1192,6 +1526,12 @@ class AzureVmUtilsValidator:
             ), f"unexpected {resource_disk}"
 
         logger.info("validate_dev_disk_azure_links_resource OK: %r", resource_disk)
+
+    def validate_mounts(self) -> None:
+        """Ensure SCSI resource disk and/or NVMe local disks are mounted correctly."""
+        self.mount_info.validate(
+            self.disk_info, self.azure_ephemeral_disk_config, self.service_info
+        )
 
     def validate_networking(self) -> None:
         """Validate networking configuration."""
@@ -1238,6 +1578,10 @@ class AzureVmUtilsValidator:
             self.disk_info.dev_disk_azure_resource_disk,
         )
 
+    def validate_services(self) -> None:
+        """Validate services."""
+        logger.info("validate_services OK: %r", self.service_info)
+
     def validate_sku_config(self) -> None:
         """Validate SKU config."""
         if not self.sku_config:
@@ -1278,7 +1622,9 @@ class AzureVmUtilsValidator:
             logger.info("validate_dev_disk_azure_links_local SKIPPED")
             logger.info("validate_dev_disk_azure_links_os SKIPPED")
             logger.info("validate_dev_disk_azure_links_resource SKIPPED")
+            logger.info("validate_mounts SKIPPED")
             logger.info("validate_scsi_resource_disk SKIPPED")
+            logger.info("validate_services SKIPPED")
             logger.info("validate_networking SKIPPED")
             logger.info("validate_nvme_io_timeouts SKIPPED")
         else:
@@ -1286,8 +1632,10 @@ class AzureVmUtilsValidator:
             self.validate_dev_disk_azure_links_local()
             self.validate_dev_disk_azure_links_os()
             self.validate_dev_disk_azure_links_resource()
+            self.validate_mounts()
             self.validate_networking()
             self.validate_nvme_io_timeouts()
+            self.validate_services()
             self.validate_scsi_resource_disk()
 
         self.validate_sku_config()
