@@ -255,7 +255,7 @@ Before:
 
 - `cloud-init.target` ensures we start before cloud-init completes which services may use to determine if system is fully configured
 - `walinuxagent.service waagent.service` ensures we start prior to walinuxagent and avoid conflicts
-- `netowrk-online.target` to ensure we start before networking is considered online
+- `network-online.target` to ensure we start before networking is considered online
 - `sshd.service` to ensure we start before sshd starts accepting connections
 - `systemd-user-sessions.service` to ensure we start before user sessions are enabled
 - `sysinit.target` to ensure we run before most services requiring mounts (Debian/Ubuntu only)
