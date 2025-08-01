@@ -1,4 +1,4 @@
-.TH "azure-ephemeral-disk-setup" "8" "July\ 28,\ 2025" "azure-ephemeral-disk-setup @VERSION@" "User Manual"
+.TH "azure-ephemeral-disk-setup" "8" "August\ 01,\ 2025" "azure-ephemeral-disk-setup @VERSION@" "User Manual"
 .hy
 .SH NAME
 .PP
@@ -336,7 +336,7 @@ which services may use to determine if system is fully configured
 \f[CB]walinuxagent.service waagent.service\f[R] ensures we start prior to
 walinuxagent and avoid conflicts
 .IP \[bu] 2
-\f[CB]netowrk-online.target\f[R] to ensure we start before networking is
+\f[CB]network-online.target\f[R] to ensure we start before networking is
 considered online
 .IP \[bu] 2
 \f[CB]sshd.service\f[R] to ensure we start before sshd starts accepting
