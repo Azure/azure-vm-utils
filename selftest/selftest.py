@@ -39,6 +39,25 @@ DEV_DISK_AZURE_RESOURCE = "/dev/disk/azure/resource"
 DEV_DISK_CLOUD_AZURE_RESOURCE = "/dev/disk/cloud/azure_resource"
 
 
+def is_systemd_fixed_for_unmanaged_bug(systemd_version: str) -> bool:
+    """Check if systemd version is >= 257.7.
+
+    Due to https://github.com/systemd/systemd/issues/36997 there may be
+    an unexpected IP assigned to VF that we would otherwise assert on.
+    """
+    parts = systemd_version.split(".")
+    major = int(parts[0])
+    minor = 0
+
+    # minor may have -patch data, remove it then convert to int.
+    if len(parts) > 1:
+        match = re.search(r"\d+", parts[1])
+        if match:
+            minor = int(match.group())
+
+    return major > 257 or (major == 257 and minor >= 7)
+
+
 @dataclass(eq=True, repr=True)
 class SkuConfig:
     """VM sku-specific configuration related to disks."""
@@ -542,7 +561,6 @@ class DiskInfo:
             scsi_resource_disk_size_gib=scsi_resource_disk_size_gib,
         )
 
-        logger.info("disks info: %r", disk_info)
         return disk_info
 
 
@@ -631,6 +649,8 @@ class AzureEphemeralDiskConfig:
 class ServiceInfo:
     """Status of various system services."""
 
+    systemd_version: str
+    systemd_version_fixed_unmanaged_bug: bool
     cloud_init_service_enabled: bool
     ephemeral_service_enabled: bool
     ephemeral_service_active: bool
@@ -673,6 +693,17 @@ class ServiceInfo:
                 AZURE_EPHEMERAL_DISK_SETUP_SERVICE,
             ]
         )
+
+        # Get systemd version line. Then parse for detailed version.
+        # Example first line output: `systemd 255 (255.4-1ubuntu8.8)`.
+        systemd_version = (
+            unchecked_run(["systemctl", "--version"]).strip().split("\n")[0]
+        )
+        systemd_version = systemd_version.split()[-1].strip("()")
+        systemd_version_fixed_unmanaged_bug = is_systemd_fixed_for_unmanaged_bug(
+            systemd_version
+        )
+
         waagent_config_path = Path("/etc/waagent.conf")
         waagent_resource_disk_format = (
             "ResourceDisk.Format=y" in waagent_config_path.read_text(encoding="utf-8")
@@ -686,6 +717,8 @@ class ServiceInfo:
             ephemeral_service_active=ephemeral_service_active,
             ephemeral_service_failed=ephemeral_service_failed,
             ephemeral_service_journal=ephemeral_service_journal,
+            systemd_version=systemd_version,
+            systemd_version_fixed_unmanaged_bug=systemd_version_fixed_unmanaged_bug,
             waagent_resource_disk_format=waagent_resource_disk_format,
         )
 
@@ -844,7 +877,9 @@ class MountInfo:
 
             assert not mnt_kernel, f"unexpected kernel mount for /mnt: {mnt_kernel}"
 
-        logger.info("validate_ephemeral_mount OK: %r", self)
+        logger.info(
+            "validate_ephemeral_mount OK: fstab=%r kernel=%r", mnt_fstab, mnt_kernel
+        )
 
     def validate(
         self,
@@ -955,7 +990,7 @@ class AzureNvmeIdInfo:
             assert disk_cfg.nvme_id, f"unexpected remote disk id {disk_cfg}"
             assert not disk_cfg.extra, f"unexpected remote disk extra {disk_cfg}"
 
-        logger.info("validate_azure_nvme_disks OK: %r", self.azure_nvme_id_disks)
+        logger.info("validate_azure_nvme_disks OK")
 
     def validate_azure_nvme_id(self, disk_info: DiskInfo) -> None:
         """Validate azure-nvme-id outputs."""
@@ -971,7 +1006,7 @@ class AzureNvmeIdInfo:
             ), f"unexpected azure-nvme-id stderr: {self.azure_nvme_id_stderr}"
 
         self._validate_azure_nvme_disks(self.azure_nvme_id_disks, disk_info)
-        logger.info("validate_azure_nvmve_id OK: %r", self.azure_nvme_id_stdout)
+        logger.info("validate_azure_nvme_id OK")
 
     def validate_azure_nvme_id_help(self) -> None:
         """Validate azure-nvme-id --help outputs."""
@@ -984,9 +1019,7 @@ class AzureNvmeIdInfo:
             and self.azure_nvme_id_help_stdout.startswith("Usage: azure-nvme-id ")
         ), "unexpected azure-nvme-id --help stdout: {self.azure_nvme_id_help_stdout!r}"
 
-        logger.info(
-            "validate_azure_nvme_id_help OK: %r", self.azure_nvme_id_help_stdout
-        )
+        logger.info("validate_azure_nvme_id_help OK")
 
     def validate_azure_nvme_id_json(self, disk_info: DiskInfo) -> None:
         """Validate azure-nvme-id --format json outputs."""
@@ -1012,9 +1045,7 @@ class AzureNvmeIdInfo:
             )
             for disk in self.azure_nvme_id_json_disks.values()
         ), "missing model in azure-nvme-id --format json"
-        logger.info(
-            "validate_azure_nvmve_id_json OK: %r", self.azure_nvme_id_json_stdout
-        )
+        logger.info("validate_azure_nvme_id_json OK")
 
     def validate_azure_nvme_id_version(self) -> None:
         """Validate azure-nvme-id --version outputs."""
@@ -1047,9 +1078,7 @@ class AzureNvmeIdInfo:
             and self.azure_nvme_id_zzz_stdout.startswith("Usage: azure-nvme-id ")
         ), (f"unexpected azure-nvme-id zzz stdout: {self.azure_nvme_id_zzz_stdout!r}")
 
-        logger.info(
-            "validate_azure_nvme_id_invalid_arg OK: %r", self.azure_nvme_id_zzz_stdout
-        )
+        logger.info("validate_azure_nvme_id_invalid_arg OK")
 
     def validate(self, disk_info: DiskInfo) -> None:
         """Validate Azure NVMe ID output."""
@@ -1122,7 +1151,7 @@ class AzureNvmeIdInfo:
             azure_nvme_id_zzz_stdout=azure_nvme_id_zzz_stdout,
             azure_nvme_id_zzz_stderr=azure_nvme_id_zzz_stderr,
         )
-        logger.info("azure-nvme-id info: %r", azure_nvme_id_info)
+
         return azure_nvme_id_info
 
     @staticmethod
@@ -1337,7 +1366,9 @@ class NetworkInfo:
             )
             return {}
 
-    def _validate_interface(self, interface: NetworkInterface) -> None:
+    def _validate_interface(
+        self, interface: NetworkInterface, service_info: ServiceInfo
+    ) -> None:
         """Ensure the required properties are set for hv_netvsc, mlx4, mlx5, and mana devices."""
         if interface.driver in ["mlx4_core", "mlx5_core", "mana"]:
             assert (
@@ -1362,22 +1393,31 @@ class NetworkInfo:
         ):
             assert interface.ipv4_addrs, f"missing IPv4 addresses for {interface}"
         else:
-            # Due to https://github.com/systemd/systemd/issues/36997 there may be
-            # an IP assigned to VF. Log an error for now but do not assert until
-            # fix is widely available.
-            if interface.ipv4_addrs:
+            # Ensure accelerated network VFs do not have an IP assigned.  There is a
+            # systemd bug which will cause this check to fail, only log the failure
+            # if unpatched to avoid unnecessary assertion failures.
+            if service_info.systemd_version_fixed_unmanaged_bug:
+                assert (
+                    not interface.ipv4_addrs
+                ), f"unexpected IPv4 addresses for {interface}"
+            elif interface.ipv4_addrs:
                 logger.error(
                     "unexpected IPv4 addresses for %s: %r",
                     interface.name,
                     interface.ipv4_addrs,
                 )
 
-        logger.info("validate_interface %s OK: %r", interface.name, interface)
+        logger.info(
+            "validate_interface %s %s OK: %r",
+            interface.name,
+            interface.driver,
+            interface.ipv4_addrs,
+        )
 
-    def validate(self) -> None:
+    def validate(self, service_info: ServiceInfo) -> None:
         """Validate network configuration."""
         for _, interface in self.interfaces.items():
-            self._validate_interface(interface)
+            self._validate_interface(interface, service_info)
 
     @classmethod
     def gather(cls) -> "NetworkInfo":
@@ -1415,6 +1455,12 @@ class AzureVmUtilsValidator:
         self.sku_config = SKU_CONFIGS.get(self.vm_size)
 
         logger.info("sku config: %r", self.sku_config)
+        logger.info("azure_ephemeral_disk_config: %r", self.azure_ephemeral_disk_config)
+        logger.info("azure_nvme_id_info: %r", self.azure_nvme_id_info)
+        logger.info("disk_info: %r", self.disk_info)
+        logger.info("mount_info: %r", self.mount_info)
+        logger.info("net_info: %r", self.net_info)
+        logger.info("service_info: %r", self.service_info)
 
     def validate_dev_disk_azure_links_data(self) -> None:
         """Validate /dev/disk/azure/data links.
@@ -1555,8 +1601,8 @@ class AzureVmUtilsValidator:
 
     def validate_networking(self) -> None:
         """Validate networking configuration."""
-        self.net_info.validate()
-        logger.info("validate_networking OK: %r", self.net_info)
+        self.net_info.validate(self.service_info)
+        logger.info("validate_networking OK")
 
     def validate_nvme_io_timeouts(self) -> None:
         """Validate NVMe queue I/O timeouts."""
@@ -1600,7 +1646,7 @@ class AzureVmUtilsValidator:
 
     def validate_services(self) -> None:
         """Validate services."""
-        logger.info("validate_services OK: %r", self.service_info)
+        logger.info("validate_services OK")
 
     def validate_sku_config(self) -> None:
         """Validate SKU config."""
@@ -1631,10 +1677,11 @@ class AzureVmUtilsValidator:
             == self.sku_config.temp_disk_size_gib
         ), f"temp disk size mismatch: {self.disk_info.dev_disk_azure_resource_disk_size_gib} != {self.sku_config.temp_disk_size_gib}"
 
-        logger.info("validate_sku_config OK: %r", self.sku_config)
+        logger.info("validate_sku_config OK")
 
     def validate(self) -> None:
         """Run validations."""
+        logger.info("Starting validation...")
         self.azure_nvme_id_info.validate(self.disk_info)
 
         if self.skip_udev_validation:

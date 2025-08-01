@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 # pylint: disable=attribute-defined-outside-init
 # pylint: disable=redefined-outer-name
 
-
 ARM64_IMAGES = [
     image for image in os.getenv("SELFTEST_ARM64_IMAGES", "").split(",") if image
 ]
@@ -120,53 +119,52 @@ def _subprocess_run(
 ) -> subprocess.CompletedProcess:
     """Run a subprocess command and capture outputs as utf-8."""
     artifact_path = artifacts_path / artifact_name
-    deadline = datetime.now(timezone.utc) + timedelta(minutes=30)
     printable_cmd = shlex.join(cmd)
 
-    while datetime.now(timezone.utc) < deadline:
-        logger.debug("executing command: %s", printable_cmd)
-        proc = subprocess.run(
-            cmd,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        logger.debug(
-            "executed command=%s rc=%d artifact=%s",
+    logger.debug("executing command: %s", printable_cmd)
+    proc = subprocess.run(
+        cmd,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    logger.debug(
+        "executed command=%s rc=%d artifact=%s",
+        printable_cmd,
+        proc.returncode,
+        artifact_path.as_posix(),
+    )
+
+    stdout = proc.stdout
+    stderr = proc.stderr
+    if decode:
+        # Decode potential byte repr strings from get-boot-log.
+        stdout = safe_parse_bytes_literal(stdout)
+        stderr = safe_parse_bytes_literal(stderr)
+
+    artifact_path.write_text(
+        f"cmd: {printable_cmd}\nrc: {proc.returncode}\nstdout:\n{stdout!s}\nstderr:\n{stderr!s}",
+        encoding="utf-8",
+    )
+
+    if proc.returncode != 0:
+        logger.error(
+            "command failed: %s rc=%d artifact=%s\nstdout:\n%s\nstderr:\n%s",
             printable_cmd,
             proc.returncode,
             artifact_path.as_posix(),
+            stdout,
+            stderr,
         )
 
-        stdout = proc.stdout
-        stderr = proc.stderr
-        if decode:
-            # Decode potential byte repr strings from get-boot-log.
-            stdout = safe_parse_bytes_literal(stdout)
-            stderr = safe_parse_bytes_literal(stderr)
-
-        artifact_path.write_text(
-            f"cmd: {printable_cmd}\nrc: {proc.returncode}\nstdout:\n{stdout!s}\nstderr:\n{stderr!s}",
-            encoding="utf-8",
+    if check and proc.returncode != 0:
+        raise RuntimeError(
+            f"Command '{printable_cmd}' failed with return code {proc.returncode}: {artifact_path.as_posix()}\nstdout={stdout!s}\nstderr={stderr!s}"
         )
 
-        if proc.returncode != 0 and proc.stderr.startswith("ssh:"):
-            logger.debug("SSH failed, retrying...")
-            time.sleep(5)
-            continue
-
-        if check and proc.returncode != 0:
-            raise RuntimeError(
-                f"Command '{printable_cmd}' failed with return code {proc.returncode}: {artifact_path.as_posix()}"
-            )
-
-        return proc
-
-    raise RuntimeError(
-        f"Command '{printable_cmd}' timed out after 30 minutes: {artifacts_path.as_posix()}"
-    )
+    return proc
 
 
 @pytest.fixture
@@ -482,29 +480,35 @@ def public_ip(
     """Create a temporary public IP address for the test."""
     while True:
         ip_name = f"temp-ip-{random_suffix}"
+        public_ip_create_cmd = [
+            "az",
+            "network",
+            "public-ip",
+            "create",
+            "--subscription",
+            azure_subscription,
+            "--resource-group",
+            temp_resource_group,
+            "--location",
+            azure_location,
+            "--name",
+            ip_name,
+            "--sku",
+            "Standard",
+            "--allocation-method",
+            "Static",
+            "--query",
+            "publicIp.ipAddress",
+            "--output",
+            "tsv",
+        ]
+
+        ip_tags = os.getenv("SELFTEST_PUBLIC_IP_TAGS", "")
+        if ip_tags:
+            public_ip_create_cmd += ["--ip-tags", ip_tags]
+
         proc = _subprocess_run(
-            [
-                "az",
-                "network",
-                "public-ip",
-                "create",
-                "--subscription",
-                azure_subscription,
-                "--resource-group",
-                temp_resource_group,
-                "--location",
-                azure_location,
-                "--name",
-                ip_name,
-                "--sku",
-                "Standard",
-                "--allocation-method",
-                "Static",
-                "--query",
-                "publicIp.ipAddress",
-                "--output",
-                "tsv",
-            ],
+            public_ip_create_cmd,
             artifact_name="az_public_ip_create",
             artifacts_path=artifacts_path,
             check=True,
@@ -985,7 +989,8 @@ class TestVMs:
 
     def _wait_for_vm(self) -> None:
         """Wait for the VM to be ready."""
-        while True:
+        deadline = datetime.now(timezone.utc) + timedelta(minutes=30)
+        while datetime.now(timezone.utc) < deadline:
             logger.debug("waiting for VM to be ready on boot %s...", self.boot_id)
             if not self._is_vm_running():
                 logger.debug("VM %s is not running, starting...", self.vm_name)
@@ -994,9 +999,6 @@ class TestVMs:
             # Refresh boot diagnostics on every loop in case something went wrong.
             self._fetch_boot_diagnostics()
 
-            self._execute_ssh_command(
-                ["cloud-init", "status", "--wait"], artifact_name="cloud-init-status"
-            )
             proc = self._execute_ssh_command(
                 ["systemctl", "is-system-running", "--wait"],
                 artifact_name="systemctl-status",
@@ -1007,6 +1009,11 @@ class TestVMs:
 
             logger.debug("VM status: %s", status)
             if status in ("running", "degraded"):
+                # Ensure cloud-init is done before proceeding too.
+                self._execute_ssh_command(
+                    ["cloud-init", "status", "--wait"],
+                    artifact_name="cloud-init-status",
+                )
                 return
 
             logger.debug("debug: %s bash", shlex.join(self.ssh_command))
@@ -1016,6 +1023,10 @@ class TestVMs:
                 self.temp_resource_group,
             )
             time.sleep(2)
+
+        raise RuntimeError(
+            f"VM {self.vm_name} did not become ready in time after 30 minutes: {self.artifacts_path.as_posix()}"
+        )
 
     def run_test(self) -> None:
         """Create VM and run self-tests."""
