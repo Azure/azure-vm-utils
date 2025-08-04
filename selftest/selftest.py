@@ -46,7 +46,12 @@ def is_systemd_fixed_for_unmanaged_bug(systemd_version: str) -> bool:
     an unexpected IP assigned to VF that we would otherwise assert on.
     """
     parts = systemd_version.split(".")
-    major = int(parts[0])
+    match = re.search(r"\d+", parts[0])
+    if not match:
+        raise RuntimeError(
+            f"Unexpected systemd version format: {systemd_version}. Expected format is 'major.minor'."
+        )
+    major = int(match.group())
     minor = 0
 
     # minor may have -patch data, remove it then convert to int.

@@ -971,7 +971,6 @@ class TestVMs:
         """Reboot the VM."""
         self._execute_ssh_command(["reboot"], artifact_name="reboot")
         time.sleep(10)
-        self._wait_for_vm()
 
     def _verify_image(self) -> None:
         """Verify the image has scrubbed conflicting configurations."""
@@ -989,9 +988,15 @@ class TestVMs:
 
     def _wait_for_vm(self) -> None:
         """Wait for the VM to be ready."""
+        attempt = 0
         deadline = datetime.now(timezone.utc) + timedelta(minutes=30)
         while datetime.now(timezone.utc) < deadline:
-            logger.debug("waiting for VM to be ready on boot %s...", self.boot_id)
+            attempt += 1
+            logger.debug(
+                "waiting for VM to be ready on boot %s (attempt %d)...",
+                self.boot_id,
+                attempt,
+            )
             if not self._is_vm_running():
                 logger.debug("VM %s is not running, starting...", self.vm_name)
                 self._start_vm()
@@ -1047,11 +1052,13 @@ class TestVMs:
                     self._fetch_boot_diagnostics()
                     self._fetch_logs()
                     self._run_selftest_script()
+
+                    # Check if we need to reboot or reallocate VM.
                     if self.boot < self.reboots:
                         self._reboot_vm()
-                if self.alloc < self.reallocates:
-                    self._deallocate_vm()
-                    self._start_vm()
+                    elif self.alloc < self.reallocates:
+                        self._deallocate_vm()
+                        self._start_vm()
         except Exception as error:
             self.request.session.failed = True
             logger.error(
