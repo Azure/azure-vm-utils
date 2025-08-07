@@ -776,7 +776,7 @@ test_fstab_readonly_reboot_already_mounted_elsewhere() {
     assert_in_stderr "WARNING: unable to persist mount to /etc/fstab"
 
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT=/media"
-    run_and_assert_failure_regex "Filesystem with label=AzureEphmDsk is unexpectedly mounted: ${NVME_DISKS[0]} /mnt ext4 rw,relatime,stripe=[0-9]+ AzureEphmDsk"
+    run_and_assert_failure_regex "Filesystem with label=AzureEphmDsk is unexpectedly mounted: ${NVME_DISKS[0]}[[:space:]]+/mnt[[:space:]]+ext4[[:space:]]+rw,relatime,stripe=[0-9]+[[:space:]]+AzureEphmDsk"
 }
 
 test_fstab_readonly_reboot_aggregated_nvme() {
@@ -892,7 +892,7 @@ test_custom_fs_xfs_aggregated() {
 
 test_invalid_config_aggregation() {
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION=invalid"
-    run_and_assert_failure "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION must be either 'mdadm' or 'none'."
+    run_and_assert_failure "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION must be either 'auto', 'mdadm' or 'none'."
 }
 
 test_invalid_config_fs_type() {
@@ -950,10 +950,36 @@ test_missing_mkfs_xfs() {
     run_and_assert_failure "mkfs.xfs is not installed and is required for formatting"
 }
 
-test_missing_mdadm() {
+test_aggregation_mdadm_missing_mdadm() {
     hide_mdadm
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION=mdadm"
 
     run_and_assert_failure "mdadm is not installed and is required for disk aggregation"
+}
+
+test_aggregation_auto_missing_mdadm() {
+    hide_mdadm
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION=auto"
+    configure_nvme_disks 2
+
+    run_and_assert_success "Mounted ${NVME_DISKS[0]} at /mnt with fs=ext4"
+    assert_regex_in_stderr "mdadm is not available, setting AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION to 'none'"
+}
+
+test_aggregation_auto_with_mdadm() {
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION=auto"
+    configure_nvme_disks
+
+    run_and_assert_success "Mounted /dev/md/azure-ephemeral-md_0 at /mnt with fs=ext4 chunk=512K count=${#NVME_DISKS[@]}"
+    assert_regex_in_stderr "mdadm is available, setting AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION to 'mdadm'"
+}
+
+test_aggregation_none_missing_mdadm() {
+    hide_mdadm
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION=none"
+    configure_nvme_disks 2
+
+    run_and_assert_success "Mounted ${NVME_DISKS[0]} at /mnt with fs=ext4"
 }
 
 test_mount_point_is_a_file() {
@@ -1284,9 +1310,15 @@ test_resource_unformatted() {
 run_tests() {
     SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
     TESTS=$(grep -Eo '^test_[a-zA-Z0-9_]+\(\)' "$SCRIPT_PATH" | sed 's/()//' | paste -sd' ' -)
-    TEST_COUNT=${TEST_COUNT:-0}
+    START_INDEX=${START_INDEX:-0}
+    START_COUNT=$((START_INDEX + 1))
+    TEST_COUNT=0
     for TEST in $TESTS; do
         TEST_COUNT=$((TEST_COUNT + 1))
+        if [ "$TEST_COUNT" -lt "$START_COUNT" ]; then
+            echo "Skipping test #$TEST_COUNT: $TEST"
+            continue
+        fi
         reset_all
         echo "Running test #$TEST_COUNT: $TEST"
         $TEST

@@ -38,8 +38,11 @@ Configuration is loaded from:
 The following environment variables are supported:
 
 * **AZURE\_EPHEMERAL\_DISK\_SETUP\_AGGREGATION**
-  Supported values: `mdadm`
-  Default: `mdadm` (only supported value; enables aggregation of local NVMe disks when multiple are found)
+  Supported values: `mdadm`, `none`, `auto`
+  `mdadm`: require `mdadm` and use it for aggregation if multiple disks are found, exiting with error if `mdadm` is not installed (regardless of number of disks)
+  `auto`: use `mdadm` for aggregation only if installed, otherwise fall back to use a single disk
+  `none`: never aggregate disks, only use one
+  Default: `auto`
 
 * **AZURE\_EPHEMERAL\_DISK\_SETUP\_FS\_TYPE**
   Supported values: `ext4`, `xfs`

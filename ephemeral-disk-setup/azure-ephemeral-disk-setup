@@ -214,7 +214,7 @@ wait_for_udev_to_settle() {
     udevadm settle --timeout 30 || true
 }
 
-AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION="${AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION:-mdadm}"
+AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION="${AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION:-auto}"
 AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME="${AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME:-azure-ephemeral-md}"
 AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK="${AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK:-512K}"
 AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE="${AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE:-ext4}"
@@ -224,8 +224,8 @@ AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS="${AZURE_EPHEMERAL_DISK_SET
 
 load_config
 
-if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION" =~ ^(mdadm|none)$ ]]; then
-    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION must be either 'mdadm' or 'none'."
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION" =~ ^(mdadm|none|auto)$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION must be either 'auto', 'mdadm' or 'none'."
 fi
 
 if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
@@ -261,7 +261,15 @@ if ! command -v "$MKFS" &>/dev/null; then
     exit_failure "$MKFS is not installed and is required for formatting"
 fi
 
-if ! command -v mdadm &>/dev/null; then
+if [[ "$AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION" == "auto" ]]; then
+    if command -v mdadm &>/dev/null ; then
+        log "mdadm is available, setting AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION to 'mdadm'"
+        AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION="mdadm"
+    else
+        log "mdadm is not available, setting AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION to 'none'"
+        AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION="none"
+    fi
+elif [[ "$AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION" == "mdadm" ]] && ! command -v mdadm &>/dev/null ; then
     exit_failure "mdadm is not installed and is required for disk aggregation"
 fi
 
