@@ -856,7 +856,7 @@ test_custom_udevadm_settle_timeout() {
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true" 'AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS=90'
 
     run_and_assert_success "Mounted /dev/disk/azure/resource at /mnt with fs=ext4"
-    assert_in_stderr "Waiting for udev to settle (timeout=90)..."
+    assert_in_stderr "Waiting for udev to settle (timeout=90s)..."
 }
 
 test_custom_mount_deep() {

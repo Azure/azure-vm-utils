@@ -211,7 +211,7 @@ start_and_wait_for_systemd_unit() {
 }
 
 wait_for_udev_to_settle() {
-    log "Waiting for udev to settle (timeout=$AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS)..."
+    log "Waiting for udev to settle (timeout=${AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS}s)..."
     udevadm settle --timeout "$AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS" || true
 }
 
