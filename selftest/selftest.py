@@ -591,7 +591,7 @@ class AzureEphemeralDiskConfig:
     @classmethod
     def gather(cls) -> "AzureEphemeralDiskConfig":
         """Parse service config."""
-        aggregation = "mdadm"
+        aggregation = "auto"
         fs_type = "ext4"
         mdadm_chunk = "512K"
         mdadm_name = "azure-ephemeral-md"
@@ -611,7 +611,7 @@ class AzureEphemeralDiskConfig:
             key, value = line.split("=", 1)
             value = shlex.split(value, posix=True)[0]
             if key == "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION":
-                if value not in {"mdadm", "none"}:
+                if value not in {"auto", "mdadm", "none"}:
                     raise ValueError(f"Invalid aggregation: {value}")
                 aggregation = value
             elif key == "AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE":

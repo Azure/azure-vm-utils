@@ -850,12 +850,21 @@ test_custom_mount() {
     run_and_assert_success "Mounted /dev/disk/azure/resource at /mnt/custom-MOUNT_0 with fs=ext4"
 }
 
+test_custom_udevadm_settle_timeout() {
+    configure_nvme_disks 0
+    configure_scsi_resource_disk 1
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true" 'AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS=90'
+
+    run_and_assert_success "Mounted /dev/disk/azure/resource at /mnt with fs=ext4"
+    assert_in_stderr "Waiting for udev to settle (timeout=90)..."
+}
+
 test_custom_mount_deep() {
     configure_nvme_disks 0
     configure_scsi_resource_disk 1
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true" "AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT=/mnt/foo/BAR/custom_0"
 
-     run_and_assert_success "Mounted /dev/disk/azure/resource at /mnt/foo/BAR/custom_0 with fs=ext4"
+    run_and_assert_success "Mounted /dev/disk/azure/resource at /mnt/foo/BAR/custom_0 with fs=ext4"
 }
 
 test_custom_mdadm_chunk() {
@@ -935,11 +944,25 @@ test_invalid_config_scsi_resource() {
     run_and_assert_failure "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE must be either 'true' or 'false'"
 }
 
+test_invalid_udevadm_settle_timeout() {
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS=invalid"
+    run_and_assert_failure "AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS must be a positive integer"
+
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS=-1"
+    run_and_assert_failure "AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS must be a positive integer"
+
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS=0"
+    run_and_assert_failure "AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS must be a positive integer"
+}
+
 test_invalid_systemd_unit_timeout() {
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS=invalid"
     run_and_assert_failure "AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS must be a positive integer"
 
     configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS=-1"
+    run_and_assert_failure "AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS must be a positive integer"
+
+    configure_conf "AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS=0"
     run_and_assert_failure "AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS must be a positive integer"
 }
 
