@@ -1,4 +1,4 @@
-.TH "azure-ephemeral-disk-setup" "8" "August\ 01,\ 2025" "azure-ephemeral-disk-setup @VERSION@" "User Manual"
+.TH "azure-ephemeral-disk-setup" "8" "August\ 08,\ 2025" "azure-ephemeral-disk-setup @VERSION@" "User Manual"
 .hy
 .SH NAME
 .PP
@@ -46,8 +46,13 @@ Environment variables (fallback)
 The following environment variables are supported:
 .IP \[bu] 2
 \f[B]AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION\f[R] Supported values:
-\f[CB]mdadm\f[R] Default: \f[CB]mdadm\f[R] (only supported value; enables
-aggregation of local NVMe disks when multiple are found)
+\f[CB]mdadm\f[R], \f[CB]none\f[R], \f[CB]auto\f[R] \f[CB]mdadm\f[R]: require
+\f[CB]mdadm\f[R] and use it for aggregation if multiple disks are found,
+exiting with error if \f[CB]mdadm\f[R] is not installed (regardless of
+number of disks) \f[CB]auto\f[R]: use \f[CB]mdadm\f[R] for aggregation
+only if installed, otherwise fall back to use a single disk
+\f[CB]none\f[R]: never aggregate disks, only use one Default:
+\f[CB]auto\f[R]
 .IP \[bu] 2
 \f[B]AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE\f[R] Supported values:
 \f[CB]ext4\f[R], \f[CB]xfs\f[R] Default: \f[CB]ext4\f[R] (universally
@@ -66,6 +71,12 @@ default mount point)
 \f[B]AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE\f[R] Supported values:
 \f[CB]true\f[R], \f[CB]false\f[R] Default: \f[CB]false\f[R] (minimizes risk
 of conflict with cloud-init and WALinuxAgent)
+.IP \[bu] 2
+\f[B]AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS\f[R] Supported
+values: positive integer (>=1) Default: 60
+.IP \[bu] 2
+\f[B]AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS\f[R]
+Supported values: positive integation (>=1) Default: 60
 .SH OPERATION
 .PP
 The service performs the following steps:

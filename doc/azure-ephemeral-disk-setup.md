@@ -64,6 +64,14 @@ The following environment variables are supported:
   Supported values: `true`, `false`
   Default: `false` (minimizes risk of conflict with cloud-init and WALinuxAgent)
 
+* **AZURE\_EPHEMERAL\_DISK\_SETUP\_SYSTEMD\_UNIT\_TIMEOUT\_SECS**
+  Supported values: positive integer (>=1)
+  Default: 60
+
+* **AZURE\_EPHEMERAL\_DISK\_SETUP\_UDEVADM\_SETTLE\_TIMEOUT\_SECS**
+  Supported values: positive integation (>=1)
+  Default: 60
+
 # OPERATION
 
 The service performs the following steps:
