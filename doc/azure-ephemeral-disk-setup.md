@@ -91,7 +91,6 @@ If the mount point is already configured:
   * if mount succeeds, service exits with success.
   * if mount does not complete, this service will check if the ephemeral disks have been reallocated and reconfigure them via the standard detection/validation process below.
 
-needed.
 * by cloud-init and source is `/dev/disk/cloud/azure_resource-part1`:
 
   * if `AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=false`, the service exits with success allowing cloud-init to manage the disk.
