@@ -86,11 +86,16 @@ The service performs the following steps:
 
 If the mount point is already configured:
 
-* with a matching `/etc/fstab` line containing the comment `comment=azure-ephemeral-disk-setup`, the service exits with success after waiting for mount to complete.
+* with a matching `/etc/fstab` line containing the comment `comment=azure-ephemeral-disk-setup`, the service will wait for mount to complete.
+
+  * if mount succeeds, service exits with success.
+  * if mount does not complete, this service will check if the ephemeral disks have been reallocated and reconfigure them via the standard detection/validation process below.
+
+needed.
 * by cloud-init and source is `/dev/disk/cloud/azure_resource-part1`:
 
   * if `AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=false`, the service exits with success allowing cloud-init to manage the disk.
-  * if `AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true`, the service exits with error as the entry is either stale or conflicting
+  * if `AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true`, the service exits with error as the entry is either stale or conflicting.
 
 * by other tools/services/configuration, the service exits with error.
 

@@ -95,19 +95,26 @@ Required tools (\f[CB]mkfs.${AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE}\f[R],
 If the mount point is already configured:
 .IP \[bu] 2
 with a matching \f[CB]/etc/fstab\f[R] line containing the comment
-\f[CB]comment=azure-ephemeral-disk-setup\f[R], the service exits with
-success after waiting for mount to complete.
-.IP \[bu] 2
-by cloud-init and source is
-\f[CB]/dev/disk/cloud/azure_resource-part1\f[R]:
+\f[CB]comment=azure-ephemeral-disk-setup\f[R], the service will wait for
+mount to complete.
 .RS 2
+.IP \[bu] 2
+if mount succeeds, service exits with success.
+.IP \[bu] 2
+if mount does not complete, this service will check if the ephemeral
+disks have been reallocated and reconfigure them via the standard
+detection/validation process below.
+.RE
+.PP
+needed.
+* by cloud-init and source is
+\f[CB]/dev/disk/cloud/azure_resource-part1\f[R]:
 .IP \[bu] 2
 if \f[CB]AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=false\f[R], the service
 exits with success allowing cloud-init to manage the disk.
 .IP \[bu] 2
 if \f[CB]AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true\f[R], the service
-exits with error as the entry is either stale or conflicting
-.RE
+exits with error as the entry is either stale or conflicting.
 .IP \[bu] 2
 by other tools/services/configuration, the service exits with error.
 .SS 3. Detect and Validate Disks
