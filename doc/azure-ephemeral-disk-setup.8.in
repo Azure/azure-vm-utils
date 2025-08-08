@@ -1,0 +1,383 @@
+.TH "azure-ephemeral-disk-setup" "8" "August\ 08,\ 2025" "azure-ephemeral-disk-setup @VERSION@" "User Manual"
+.hy
+.SH NAME
+.PP
+\f[B]azure-ephemeral-disk-setup\f[R] \[em] detect, validate, format, and
+mount Azure ephemeral local disks (NVMe or SCSI) with optional RAID
+aggregation
+.SH SYNOPSIS
+.IP
+.nf
+\f[CR]
+azure-ephemeral-disk-setup
+\f[R]
+.fi
+.SH DESCRIPTION
+.PP
+\f[B]azure-ephemeral-disk-setup\f[R] is a systemd-managed one-shot
+initialization service for Microsoft Azure virtual machines that
+prepares ephemeral (temporary) disks for use.
+It supports both NVMe and SCSI ephemeral disks and is capable of
+aggregating multiple NVMe devices into a RAID-0 array using
+\f[CB]mdadm\f[R].
+.PP
+The service is opt-in and should be configured through
+\f[CB]/etc/azure-ephemeral-disk-setup.conf\f[R].
+It runs early in the boot process and aims to be idempotent, safe, and
+compatible with existing tools such as \f[CB]cloud-init\f[R] and
+\f[CB]WALinuxAgent\f[R].
+.PP
+Logs are printed to stderr and are accessible via journalctl if using
+the systemd service:
+.IP
+.nf
+\f[CR]
+journalctl -u azure-ephemeral-disk-setup.service
+\f[R]
+.fi
+.SH CONFIGURATION
+.PP
+Configuration is loaded from:
+.IP \[bu] 2
+\f[CB]/etc/azure-ephemeral-disk-setup.conf\f[R] (preferred)
+.IP \[bu] 2
+Environment variables (fallback)
+.PP
+The following environment variables are supported:
+.IP \[bu] 2
+\f[B]AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION\f[R] Supported values:
+\f[CB]mdadm\f[R], \f[CB]none\f[R], \f[CB]auto\f[R] \f[CB]mdadm\f[R]: require
+\f[CB]mdadm\f[R] and use it for aggregation if multiple disks are found,
+exiting with error if \f[CB]mdadm\f[R] is not installed (regardless of
+number of disks) \f[CB]auto\f[R]: use \f[CB]mdadm\f[R] for aggregation
+only if installed, otherwise fall back to use a single disk
+\f[CB]none\f[R]: never aggregate disks, only use one Default:
+\f[CB]auto\f[R]
+.IP \[bu] 2
+\f[B]AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE\f[R] Supported values:
+\f[CB]ext4\f[R], \f[CB]xfs\f[R] Default: \f[CB]ext4\f[R] (universally
+available; \f[CB]xfs\f[R] requires \f[CB]xfsprogs\f[R])
+.IP \[bu] 2
+\f[B]AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK\f[R] Supported values: Any
+valid mdadm chunk size Default: \f[CB]512K\f[R] (mdadm default)
+.IP \[bu] 2
+\f[B]AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME\f[R] Supported values: Any
+valid mdadm name Default: \f[CB]azure-ephemeral-md\f[R]
+.IP \[bu] 2
+\f[B]AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT\f[R] Supported values: Any
+valid mount point path Default: \f[CB]/mnt\f[R] (matches cloud-init
+default mount point)
+.IP \[bu] 2
+\f[B]AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE\f[R] Supported values:
+\f[CB]true\f[R], \f[CB]false\f[R] Default: \f[CB]false\f[R] (minimizes risk
+of conflict with cloud-init and WALinuxAgent)
+.IP \[bu] 2
+\f[B]AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS\f[R] Supported
+values: positive integer (>=1) Default: 60
+.IP \[bu] 2
+\f[B]AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS\f[R]
+Supported values: positive integation (>=1) Default: 60
+.SH OPERATION
+.PP
+The service performs the following steps:
+.SS 1. Load and Validate Configuration
+.IP \[bu] 2
+Configuration is read via filtered
+\f[CB]source /etc/azure-ephemeral-disk-setup.conf\f[R], allowing only
+safe environment-style assignments.
+.IP \[bu] 2
+If invalid values are detected, the service exits with error.
+.IP \[bu] 2
+Required tools (\f[CB]mkfs.${AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE}\f[R],
+\f[CB]mdadm\f[R]) must be available.
+.SS 2. Check for Existing Mounts
+.PP
+If the mount point is already configured:
+.IP \[bu] 2
+with a matching \f[CB]/etc/fstab\f[R] line containing the comment
+\f[CB]comment=azure-ephemeral-disk-setup\f[R], the service will wait for
+mount to complete.
+.RS 2
+.IP \[bu] 2
+if mount succeeds, service exits with success.
+.IP \[bu] 2
+if mount does not complete, this service will check if the ephemeral
+disks have been reallocated and reconfigure them via the standard
+detection/validation process below.
+.RE
+.IP \[bu] 2
+by cloud-init and source is
+\f[CB]/dev/disk/cloud/azure_resource-part1\f[R]:
+.RS 2
+.IP \[bu] 2
+if \f[CB]AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=false\f[R], the service
+exits with success allowing cloud-init to manage the disk.
+.IP \[bu] 2
+if \f[CB]AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true\f[R], the service
+exits with error as the entry is either stale or conflicting.
+.RE
+.IP \[bu] 2
+by other tools/services/configuration, the service exits with error.
+.SS 3. Detect and Validate Disks
+.PP
+\f[B]NVMe\f[R] disks are detected via:
+.IP \[bu] 2
+Model names:
+.RS 2
+.IP \[bu] 2
+Microsoft NVMe Direct Disk
+.IP \[bu] 2
+Microsoft NVMe Direct Disk v2
+.RE
+.PP
+\f[B]SCSI resource disk\f[R] is detected and validated if
+\f[CB]AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true\f[R] and no ephemeral
+NVMe disks are detected.
+.PP
+See \f[B]SAFETY AND VALIDATION\f[R] section for more details on how
+disks are validated to ensure no data is lost.
+.SS 4. Disk Setup
+.PP
+Each candidate disk is checked to ensure:
+.IP \[bu] 2
+It is a block device
+.IP \[bu] 2
+It is not mounted
+.IP \[bu] 2
+It is not partitioned (unless NTFS resource disk)
+.IP \[bu] 2
+It has no existing filesystem (unless NTFS resource disk)
+.PP
+If any disk fails these checks, the service aborts with a detailed
+error.
+.SS 5. Aggregation with RAID-0 For VMs with Multiple local NVMe Disks
+.PP
+If more than one NVMe disk is found and aggregation is enabled with
+mdadm:
+.IP
+.nf
+\f[CR]
+mdadm --create \[dq]/dev/md/${AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME}_0\[dq] \[rs]
+  --level=0 \[rs]
+  --raid-devices=N \[rs]
+  --metadata=1.2 \[rs]
+  --chunk=\[dq]$AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK\[dq] \[rs]
+  --name=\[dq]$AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME\[dq] \[rs]
+  ${DISKS[\[at]]}
+\f[R]
+.fi
+.PP
+Configuration is \f[B]not\f[R] written to
+\f[CB]/etc/mdadm/mdadm.conf\f[R] in favor of kernel auto-detection.
+.SS 6. Format Filesystem
+.IP \[bu] 2
+Formats target device (either RAID device or single disk) directly
+\f[B]without partitioning\f[R]
+.IP \[bu] 2
+Uses \f[CB]mkfs.ext4 [-F] -L AzureEphmDsk ...\f[R] or
+\f[CB]mkfs.xfs [-f] -L AzureEphmDsk ...\f[R] with the force flag only if
+it is reformatting the SCSI resource disk
+.SS 7. Persistenting Mount
+.PP
+If \f[CB]/etc/fstab\f[R] is writable:
+.IP \[bu] 2
+Previous entries with \f[CB]comment=azure-ephemeral-disk-setup\f[R] are
+removed
+.IP \[bu] 2
+New entry added:
+.RS 2
+.IP
+.nf
+\f[CR]
+LABEL=AzureEphmDsk <mount_point> <fs_type> defaults,nofail,comment=azure-ephemeral-disk-setup 0 2
+\f[R]
+.fi
+.RE
+.PP
+If \f[CB]/etc/fstab\f[R] is read-only or does not exist, it will not be
+updated.
+It will be mounted by this service on every boot.
+.SS 8. Mounting
+.PP
+For persistent mounts:
+.IP \[bu] 2
+Tries to mount using systemd (\f[CB]systemctl start <mount.unit>\f[R])
+.IP \[bu] 2
+Falls back to direct \f[CB]mount\f[R] call if mount unit fails to start
+.PP
+For non-persitent mounts, a \f[CB]mount\f[R] call is used.
+.SH SAFETY AND VALIDATION
+.PP
+This service only formats NVMe disks that are:
+.IP \[bu] 2
+Not mounted
+.IP \[bu] 2
+Unpartitioned
+.IP \[bu] 2
+Unformatted
+.PP
+SCSI resource disks are only reformatted if it:
+.IP \[bu] 2
+Has a single NTFS partition labeled \f[CB]Temporary Storage\f[R]
+.IP \[bu] 2
+Is empty except for \f[CB]dataloss_warning_readme.txt\f[R] and
+\f[CB]System Volume Information\f[R]
+.RS 2
+.IP \[bu] 2
+To check if disk is empty, this service will attempt to mount the
+resource disk partition read-only via \f[CB]ntfs3\f[R], with fallback to
+\f[CB]ntfs\f[R].
+If both fail due to lack of driver, it is assumed safe to reformat.
+.RE
+.PP
+Calls to mkfs and mdadm do not use \f[CB]--force\f[R] for formatting or
+mdadm array creation unless reformatting validated NTFS SCSI disk.
+.SH EXIT STATUS
+.IP \[bu] 2
+\f[CB]0\f[R] \[em] Success
+.IP \[bu] 2
+\f[CB]1\f[R] \[em] Any error (invalid config, conflicting mount, unsafe
+disk, etc.)
+.SH FSTAB STRATEGY
+.PP
+The following values are used when generating an \f[CB]/etc/fstab\f[R]
+entry for the ephemeral disk:
+.IP \[bu] 2
+\f[B]fs_spec\f[R]: \f[CB]LABEL=AzureEphmDsk\f[R] Refers to the disk
+label.
+This assumes the script has ownership of the \f[CB]AzureEphmDsk\f[R]
+label.
+.IP \[bu] 2
+\f[B]fs_vfstype\f[R]: \f[CB]$AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE\f[R] The
+filesystem type, determined by configuration (e.g., \f[CB]ext4\f[R] or
+\f[CB]xfs\f[R]).
+.IP \[bu] 2
+\f[B]fs_mntops\f[R]:
+\f[CB]defaults,nofail,comment=azure-ephemeral-disk-setup\f[R]
+.RS 2
+.IP \[bu] 2
+\f[CB]defaults\f[R]: standard mount options
+.IP \[bu] 2
+\f[CB]nofail\f[R]: ensures the VM boots even if the ephemeral disk is
+missing or has been re-allocated
+.IP \[bu] 2
+\f[CB]comment=azure-ephemeral-disk-setup\f[R]: tags the entry to show
+it\[cq]s managed by this setup
+.RE
+.IP \[bu] 2
+\f[B]fs_freq\f[R]: \f[CB]0\f[R] Disables \f[CB]dump\f[R] backups for the
+filesystem.
+.IP \[bu] 2
+\f[B]fs_passno\f[R]: \f[CB]2\f[R] Sets the order for \f[CB]fsck\f[R]
+during boot.
+Non-root filesystems typically use \f[CB]2\f[R].
+.SH AVOIDING CONFLICTS WITH CLOUD-INIT
+.PP
+If \f[CB]AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=false\f[R], this
+service will exit with success if cloud-init is managing the SCSI
+resource disk at the same mount point.
+Given the widespread usage of cloud-init for managing the SCSI resource
+disk, this is the default case.
+.PP
+If \f[CB]AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true\f[R], cloud-init
+management of the resource disk must be disabled.
+There are two options for disabling cloud-init\[cq]s management of SCSI
+resource disk:
+.SS Disabling cloud-init management of SCSI resource disk via udev rules
+.PP
+Disable udev rules responsible for creating the /dev/disk/cloud
+symlinks:
+.IP
+.nf
+\f[CR]
+ln -sf /dev/null /etc/udev/rules.d/66-azure-ephemeral.rules
+\f[R]
+.fi
+.PP
+If cloud-init doesn\[cq]t detect the device, it will not attempt to
+format/mount it.
+.SS Disabling cloud-init management of SCSI resource disk via cloud-init configuration (cloud-init >= 25.3)
+.PP
+Work is ongoing to introduce a flag to the Azure datasource to control
+behavior.
+See pull request (https://github.com/canonical/cloud-init/pull/6323).
+.PP
+This is expected to be available in cloud-init 25.3.
+.SH AVOIDING CONFLICTS WITH WALINUXAGENT
+.PP
+WALinuxAgent must be configured with \f[CB]ResourceDisk.Format=n\f[R].
+.PP
+If \f[CB]AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true\f[R], this service
+will exit with error if \f[CB]/etc/waagent.conf\f[R] sets
+\f[CB]ResourceDisk.Format=y\f[R].
+.SH EXAMPLES
+.PP
+Basic usage:
+.IP
+.nf
+\f[CR]
+sudo azure-ephemeral-disk-setup
+\f[R]
+.fi
+.PP
+Enable management of SCSI resource disk:
+.IP
+.nf
+\f[CR]
+# /etc/azure-ephemeral-disk-setup.conf
+AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true
+\f[R]
+.fi
+.SH FILES
+.IP \[bu] 2
+\f[CB]/etc/azure-ephemeral-disk-setup.conf\f[R] \[em] user configuration
+.IP \[bu] 2
+\f[CB]/etc/fstab\f[R] \[em] mount persistence
+.SH SERVICE ORDERING
+.PP
+\f[CB]DefaultDependencies=no\f[R] to avoid typical service dependencies
+as we want to start early.
+.PP
+After:
+.IP \[bu] 2
+\f[CB]cloud-init.service\f[R] (a.k.a.
+\f[CB]cloud-init-network.service\f[R]) allows users to customize service
+configuration using cloud-config
+.IP \[bu] 2
+\f[CB]local-fs.target\f[R] ensures local filesystems are mounted
+(necessary if no cloud-init)
+.PP
+Before:
+.IP \[bu] 2
+\f[CB]cloud-init.target\f[R] ensures we start before cloud-init completes
+which services may use to determine if system is fully configured
+.IP \[bu] 2
+\f[CB]walinuxagent.service waagent.service\f[R] ensures we start prior to
+walinuxagent and avoid conflicts
+.IP \[bu] 2
+\f[CB]network-online.target\f[R] to ensure we start before networking is
+considered online
+.IP \[bu] 2
+\f[CB]sshd.service\f[R] to ensure we start before sshd starts accepting
+connections
+.IP \[bu] 2
+\f[CB]systemd-user-sessions.service\f[R] to ensure we start before user
+sessions are enabled
+.IP \[bu] 2
+\f[CB]sysinit.target\f[R] to ensure we run before most services requiring
+mounts (Debian/Ubuntu only)
+.SH DEBUGGING
+.PP
+All logs are written to stderr and accessible with:
+.IP
+.nf
+\f[CR]
+journalctl -u azure-ephemeral-disk-setup.service
+\f[R]
+.fi
+.SH SEE ALSO
+.PP
+\f[B]mdadm(8)\f[R], \f[B]mount(8)\f[R], \f[B]cloud-init(8)\f[R],
+\f[B]waagent(8)\f[R]
+.PP
+Project Home: <https://github.com/Azure/azure-vm-utils>

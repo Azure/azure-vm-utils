@@ -15,6 +15,8 @@ BuildRequires:  json-c-devel
 BuildRequires:  kernel-headers
 BuildRequires:  libcmocka-devel
 BuildRequires:  make
+Requires:       mdadm
+Requires:       util-linux
 
 %description
 A collection of utilities and udev rules to make the most of the Linux
@@ -45,10 +47,14 @@ This package contains the self-test script for the Azure VM Utils package.
 %{_libdir}/dracut/modules.d/97azure-disk/module-setup.sh
 %{_libdir}/dracut/modules.d/97azure-unmanaged-sriov/module-setup.sh
 %{_libdir}/systemd/network/01-azure-unmanaged-sriov.network
+%{_libdir}/systemd/system/azure-ephemeral-disk-setup.service
 %{_libdir}/udev/rules.d/10-azure-unmanaged-sriov.rules
 %{_libdir}/udev/rules.d/80-azure-disk.rules
+%{_sbindir}/azure-ephemeral-disk-setup
 %{_sbindir}/azure-nvme-id
+%{_mandir}/man8/azure-ephemeral-disk-setup.8.gz
 %{_mandir}/man8/azure-nvme-id.8.gz
+%{_sysconfdir}/azure-ephemeral-disk-setup.conf
 
 %files selftest
 %{_sbindir}/azure-vm-utils-selftest

@@ -36,6 +36,7 @@ cd "${project_dir}/packaging/${distro}"
 
 # Install dependencies.
 build_requirements=$(grep ^BuildRequires azure-vm-utils.spec | awk '{{print $2}}' | tr '\n' ' ')
+# shellcheck disable=SC2086
 $sudo_cmd dnf install -y ${build_requirements} rpm-build dracut
 
 # Build RPM.

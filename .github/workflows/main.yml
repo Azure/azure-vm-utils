@@ -27,7 +27,7 @@ jobs:
     - name: Setup
       run: |
         sudo apt update
-        sudo apt install gcc pandoc cmake libjson-c-dev -y
+        sudo apt install gcc pandoc cmake libjson-c-dev mdadm -y
     - name: Build & install project with cmake with tests disabled
       run: |
         cmake -B build -S . -DENABLE_TESTS=0
@@ -37,14 +37,18 @@ jobs:
       run: |
         set -x
         test -f /usr/local/lib/systemd/network/01-azure-unmanaged-sriov.network
+        test -f /usr/local/lib/systemd/system/azure-ephemeral-disk-setup.service
         test -f /usr/local/lib/udev/rules.d/10-azure-unmanaged-sriov.rules
         test -f /usr/local/lib/udev/rules.d/80-azure-disk.rules
+        test -x /usr/local/sbin/azure-ephemeral-disk-setup
         test -x /usr/local/sbin/azure-nvme-id
         test -x /usr/local/sbin/azure-vm-utils-selftest
         test -f /usr/local/share/initramfs-tools/hooks/azure-disk
         test -f /usr/local/share/initramfs-tools/hooks/azure-unmanaged-sriov
+        test -f /usr/local/share/man/man8/azure-ephemeral-disk-setup.8
         test -f /usr/local/share/man/man8/azure-nvme-id.8
         test -f /usr/local/share/man/man8/azure-vm-utils-selftest.8
+        azure-ephemeral-disk-setup --version
         azure-nvme-id --version
         azure-vm-utils-selftest --skip-imds-validation --skip-udev-validation
     - name: Verify manpages can be generated
@@ -75,7 +79,11 @@ jobs:
         make -C build check-clang-format || (echo "Run 'make clang-format' to fix formatting issues" && exit 1)
     - name: Check cppcheck
       run: |
-        make -C build cppcheck
+        make -C build cppcheck || (echo "Run 'make cppcheck' to fix cppcheck issues" && exit 1)
+    - name: Check shell scripts
+      run: |
+        sudo snap install shellcheck
+        make -C build shellcheck || (echo "Run 'make shellcheck' to fix shell script issues" && exit 1)
     - name: Check python scripts
       run: |
         python -m venv venv

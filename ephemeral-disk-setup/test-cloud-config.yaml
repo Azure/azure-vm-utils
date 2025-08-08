@@ -1,0 +1,12 @@
+#cloud-config
+bootcmd:
+  # Force delay in boot to ensure service starts after and we aren't racing.
+  - sleep 60
+
+write_files:
+  - path: /etc/azure-ephemeral-disk-setup.conf
+    permissions: '0644'
+    content: |
+      # Override fs and mount point so we can verify configs apply.
+      AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE=xfs
+      AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT=/mnt/azure-ephemeral-disk
