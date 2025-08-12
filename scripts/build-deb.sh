@@ -21,6 +21,7 @@ $sudo_cmd apt install -y \
         initramfs-tools \
         libcmocka-dev \
         libjson-c-dev \
+        mdadm \
         pandoc \
         pkg-config \
         rsync

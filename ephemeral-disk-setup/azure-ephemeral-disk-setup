@@ -1,0 +1,449 @@
+#!/bin/bash
+
+VERSION='@VERSION@'
+if [[ "$1" == "--version" ]]; then
+    echo "$VERSION"
+    exit 0
+fi
+
+set -xeuo pipefail
+
+CONFIGURATION_FILE="/etc/azure-ephemeral-disk-setup.conf"
+FSTAB_COMMENT="comment=azure-ephemeral-disk-setup"
+SCSI_RESOURCE_DISK_PATH="/dev/disk/azure/resource"
+SCSI_RESOURCE_DISK_FORCE_REFORMAT="false"
+FILESYSTEM_LABEL="AzureEphmDsk"
+DISK_BY_LABEL_PATH="/dev/disk/by-label/$FILESYSTEM_LABEL"
+
+log() {
+    echo "$1" >&2
+}
+
+exit_failure() {
+    echo "$1"
+    exit 1
+}
+
+exit_success() {
+    echo "$1"
+    exit 0
+}
+
+check_if_block_device_needs_setup() {
+    local resolved
+    resolved="$(readlink -f "$disk")"
+    log "Checking disk: $disk -> $resolved"
+
+    if [[ ! -b "$resolved" ]]; then
+        exit_failure "Not a valid block device: $disk"
+    fi
+
+    # Check if disk is currently mounted.
+    if findmnt --noheadings --output SOURCE,TARGET,FSTYPE,OPTIONS --source "$disk" >&2; then
+        exit_failure "Device $disk is already mounted or in use"
+    fi
+
+    # Check if it has partitions.
+    local partitions partition_count
+    mapfile -t partitions < <(lsblk --list --paths -o NAME,TYPE "$disk" 2>/dev/null | awk '$2 == "part" {print $1}')
+    partition_count=${#partitions[@]}
+
+    # Special handling for SCSI resource disk.
+    if [[ "$disk" == "$SCSI_RESOURCE_DISK_PATH" && "$partition_count" -eq 1 ]]; then
+        check_if_scsi_resource_device_needs_setup "$disk" "${partitions[0]}"
+        SCSI_RESOURCE_DISK_FORCE_REFORMAT="true"
+        return
+    fi
+
+    # If disk has partitions, fail setup.
+    if [[ "$partition_count" -gt 0 ]]; then
+        exit_failure "Device $disk has $partition_count partition(s)"
+    fi
+
+    # Check if disk is formatted (has a filesystem).
+    if blkid "$disk" >&2; then
+        exit_failure "Device $disk contains a partition table or is already formatted"
+    fi
+
+    # Check if disk is partitioned/formatted with parted.
+    if parted -s "$disk" print >&2; then
+        exit_failure "Device $disk is partitioned or formatted"
+    fi
+
+    log "Device $disk is not partitioned or formatted, proceeding with setup"
+}
+
+# Check if SCSI resource disk is safe to use.  Only return it if is.
+check_if_scsi_resource_device_needs_setup() {
+    local disk="$1"
+    local partition="$2"
+
+    local existing_mount
+    existing_mount="$(findmnt --noheadings --output SOURCE,TARGET,FSTYPE,OPTIONS --source "$partition" || true)"
+    if [[ -n "$existing_mount" ]]; then
+        exit_failure "Resource disk partition $partition is already mounted or in use"
+    fi
+
+    local type
+    type="$(blkid -o value -s TYPE "$partition" 2>/dev/null)"
+    if [[ "$type" != "ntfs" ]]; then
+        exit_failure "Resource disk partition $partition has type=$type, expected type=ntfs"
+    fi
+
+    local label
+    label="$(blkid -o value -s LABEL "$partition" 2>/dev/null)"
+    if [[ "$label" != "Temporary Storage" ]]; then
+        exit_failure "Resource disk partition $partition has label=$label, expected label=Temporary Storage"
+    fi
+
+    # Some distributions only have ntfs3 and some have neither (e.g. RHEL 9.4).
+    # If we can't mount it as ntfs3 or ntfs, we assume it is safe to reformat.
+    local temp_mount_path
+    temp_mount_path="$(mktemp -d)"
+
+    local mount_rc=0
+    local mount_output
+    mount_output=$(mount -t ntfs3 "$partition" "$temp_mount_path" 2>&1) || mount_rc=$?
+    log "Mount (ntfs3) exited with $mount_rc: $mount_output"
+    if [[ $mount_rc -ne 0 ]]; then
+        if [[ "$mount_output" == *"unknown filesystem type 'ntfs3'"* ]]; then
+            mount_rc=0
+            mount_output=$(mount -t ntfs "$partition" "$temp_mount_path" 2>&1) || mount_rc=$?
+            log "Mount (ntfs) exited with code=$mount_rc: $mount_output"
+            if [[ $mount_rc -ne 0 ]]; then
+                if [[ "$mount_output" == *"unknown filesystem type 'ntfs'"* ]]; then
+                    log "WARNING: failed to mount $partition due to lack of ntfs support, assuming it is empty and safe for reformat"
+                    return 0
+                fi
+                exit_failure "Mounting $partition as ntfs failed"
+            fi
+        else
+            exit_failure "Mounting $partition as ntfs3 failed"
+        fi
+    fi
+
+    local unexpected_files
+    mapfile -t unexpected_files < <(find "$temp_mount_path" -mindepth 1 -maxdepth 1 \
+        ! -iname 'dataloss_warning_readme.txt' \
+        ! -iname 'system volume information' \
+        -printf '%P\n')
+
+    umount "$temp_mount_path" || exit_failure "Unmounting NTFS $partition failed"
+    rmdir "$temp_mount_path"
+
+    if [[ ${#unexpected_files[@]} -gt 0 ]]; then
+        exit_failure "SCSI resource disk $disk is NTFS formatted but contains unexpected files or folders: ${unexpected_files[*]}"
+    fi
+
+    log "SCSI resource disk $disk is NTFS formatted and safe to reformat"
+}
+
+# Read configuration file and export key=value pairs.
+load_config() {
+    if [ ! -r "${CONFIGURATION_FILE}" ]; then
+        echo "Configuration file not found or readable: $CONFIGURATION_FILE"
+        return 1
+    fi
+
+    while IFS='=' read -r key value; do
+        # Skip empty lines and comments.
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+
+        # Remove leading and trailing spaces.
+        key="${key#"${key%%[![:space:]]*}"}"
+        value="${value#"${value%%[![:space:]]*}"}"
+        key="${key%"${key##*[![:space:]]}"}"
+        value="${value%"${value##*[![:space:]]}"}"
+
+        # Remove surrounding double and single quotes on values, if fully quoted.
+        if [[ "$value" =~ ^\".*\"$ ]]; then
+            value="${value:1:-1}"
+        elif [[ "$value" =~ ^\'.*\'$ ]]; then
+            value="${value:1:-1}"
+        fi
+
+        # Ensure key is valid.
+        case "$key" in
+            AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION|\
+            AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE|\
+            AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK|\
+            AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME|\
+            AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT|\
+            AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE|\
+            AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS|\
+            AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS)
+                ;;
+            *)
+                echo "WARNING: ignoring invalid config key=$key" >&2
+                continue
+                ;;
+        esac
+
+        # Value will be checked later, just assume it is correct and export it.
+        echo "Configuration file set key=$key with value=$value" >&2
+        export "$key=$value"
+    done < "$CONFIGURATION_FILE"
+}
+
+# Wait for a systemd unit to become active for up to 60 (AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS) seconds.
+start_and_wait_for_systemd_unit() {
+    local unit="$1"
+    local deadline=$((SECONDS + AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS))
+
+    if ! systemctl is-enabled "$unit" >&2; then
+        log "systemd unit $unit is not enabled, skipping wait"
+        return 1
+    fi
+
+    # systemctl --wait may unexpectedly hang in some scenarios, so wait for up to 1s and loop as needed.
+    while [[ $SECONDS -lt $deadline ]]; do
+        log "Waiting for systemd unit $unit to become active... (remaining: $((deadline - SECONDS)) seconds)"
+        timeout 1s systemctl start "$unit" --wait >&2 || log "Failed to start systemd unit $unit: $?"
+
+        if systemctl is-active "$unit" >&2; then
+            log "Started systemd unit $unit successfully"
+            return 0
+        fi
+    done
+
+    log "Timed out waiting for systemd unit $unit to become active: $(systemctl status "$unit" 2>&1 || true)"
+    return 1
+}
+
+wait_for_udev_to_settle() {
+    log "Waiting for udev to settle (timeout=${AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS}s)..."
+    udevadm settle --timeout "$AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS" || true
+}
+
+AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION="${AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION:-auto}"
+AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME="${AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME:-azure-ephemeral-md}"
+AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK="${AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK:-512K}"
+AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE="${AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE:-ext4}"
+AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT="${AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT:-/mnt}"
+AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE="${AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE:-false}"
+AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS="${AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS:-60}"
+AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS="${AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS:-60}"
+
+load_config
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION" =~ ^(mdadm|none|auto)$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION must be either 'auto', 'mdadm' or 'none'."
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME must be a valid name (alphanumeric, underscores, or hyphens)."
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK" =~ ^[1-9][0-9]*[KMGT]$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK must be a positive integer followed by K, M, G, or T (e.g., 512K, 1M, 2G)."
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE" =~ ^(ext4|xfs)$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE must be either 'ext4' or 'xfs'."
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" =~ ^/[a-zA-Z0-9_/-]+$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT must be an absolute path and can only contain alphanumeric characters, underscores, hyphens, and slashes."
+fi
+
+if [[ -L "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" ]] || [[ -e "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" && ! -d "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT"  ]]; then
+    exit_failure "Mount point $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT exists, but is not a directory"
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE" =~ ^(true|false)$ ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE must be either 'true' or 'false'"
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS" =~ ^[0-9]+$ || "$AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS" == 0 ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_SYSTEMD_UNIT_TIMEOUT_SECS must be a positive integer"
+fi
+
+if [[ ! "$AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS" =~ ^[0-9]+$ || "$AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS" == 0 ]]; then
+    exit_failure "AZURE_EPHEMERAL_DISK_SETUP_UDEVADM_SETTLE_TIMEOUT_SECS must be a positive integer"
+fi
+
+MKFS="mkfs.${AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE}"
+if ! command -v "$MKFS" &>/dev/null; then
+    exit_failure "$MKFS is not installed and is required for formatting"
+fi
+
+if [[ "$AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION" == "auto" ]]; then
+    if command -v mdadm &>/dev/null ; then
+        log "mdadm is available, setting AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION to 'mdadm'"
+        AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION="mdadm"
+    else
+        log "mdadm is not available, setting AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION to 'none'"
+        AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION="none"
+    fi
+elif [[ "$AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION" == "mdadm" ]] && ! command -v mdadm &>/dev/null ; then
+    exit_failure "mdadm is not installed and is required for disk aggregation"
+fi
+
+# Check for existing mount point fstab entry.
+EXISTING_FSTAB_MOUNT="$(findmnt --fstab --noheadings --output SOURCE,FSTYPE,OPTIONS --mountpoint "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" || true)"
+SYSTEMD_MOUNT_NAME=$(systemd-escape -p --suffix=mount "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT")
+
+# Ensure there are no conflicts with WALinuxAgent if AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true.
+# WALinuxAgent does not write fstab entry for us to check so we check if ResourceDisk.Format=y in waagent.conf.
+if [[ "$AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE" == "true" ]]; then
+    if grep -Eq '^ResourceDisk\.Format\s*=\s*y' /etc/waagent.conf; then
+        exit_failure "/etc/waagent.conf has ResourceDisk.Format=y which may conflict with this service"
+    fi
+fi
+
+# Ensure there are no conflicts with cloud-init (assuming matching mount point).
+if [[ "$EXISTING_FSTAB_MOUNT" == "/dev/disk/cloud/azure_resource-part1"*"comment=cloudconfig"* ]]; then
+    if [[ "$AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE" == "true" ]]; then
+        exit_failure "Mount point $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT is already configured by cloud-init, but AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=true"
+    fi
+    exit_success "Mount point $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT is already configured by cloud-init and AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=false, nothing to do"
+fi
+
+if [[ -n "$EXISTING_FSTAB_MOUNT" ]]; then
+    # If this service didn't configure the mount point, report error.
+    if [[ "$EXISTING_FSTAB_MOUNT" != *"$FSTAB_COMMENT"* ]]; then
+        DETAILS="$(awk '{print "source="$1" fstype="$2" options="$3}' <<<"$EXISTING_FSTAB_MOUNT")"
+        exit_failure "Aborting due to conflicting fstab entry for $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT with $DETAILS"
+    fi
+
+    # Check case where we already have an fstab entry configured by this service, but it is not yet mounted.
+    # This can happen if the service starts before systemd has mounted the device, or perhaps the mount failed.
+    # Try to start the systemd mount unit and wait, falling back to an explicit mount call.  If it fails here,
+    # we likely have freshly allocated disks that need to be setup.
+    EXISTING_MOUNT="$(findmnt --noheadings --output SOURCE,TARGET,FSTYPE,OPTIONS --mountpoint "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" || true)"
+    if [[ -z "$EXISTING_MOUNT" ]]; then
+        log "Mount point $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT is configured in /etc/fstab but not mounted, waiting for $SYSTEMD_MOUNT_NAME..."
+        if ! start_and_wait_for_systemd_unit "$SYSTEMD_MOUNT_NAME"; then
+            log "Mount point $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT is not yet mounted, falling back to explicit mount"
+            mount --target "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" >&2 || log "Failed to start existing mount for $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT"
+        fi
+    fi
+fi
+
+wait_for_udev_to_settle
+EXISTING_LABEL_MOUNT="$(findmnt --noheadings --output SOURCE,TARGET,FSTYPE,OPTIONS,LABEL --source "LABEL=$FILESYSTEM_LABEL" || true)"
+EXISTING_MOUNT="$(findmnt --noheadings --output SOURCE,TARGET,FSTYPE,OPTIONS,LABEL --mountpoint "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" || true)"
+
+if [[ -n "$EXISTING_MOUNT" ]]; then
+    log "Mount point $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT is mounted: $EXISTING_MOUNT"
+    if [[ "$EXISTING_MOUNT" == *"$FILESYSTEM_LABEL" ]]; then
+        exit_success "Mount point $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT is mounted and ready for use"
+    fi
+
+    exit_failure "Mount exists at $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT, but with a different label: $EXISTING_MOUNT"
+elif [[ -z "$EXISTING_FSTAB_MOUNT" && -z "$EXISTING_LABEL_MOUNT" && -b "$DISK_BY_LABEL_PATH" ]]; then
+    # There may be cases where we cannot persist the mount with an fstab entry (read-only, or no /etc/fstab).
+    # If a filesystem with the expected label is available from prior boot and currently unmounted, mount it.
+    # If the user removed the fstab entry manually for some reason, we can still mount it here.  The user
+    # should disable this service if they do not want to use the ephemeral disk as intended.  We just make note
+    # of the label and missing fstab entry in the output and exit with success after mounted.
+    DISK_BY_LABEL_PATH="$(readlink -f "$DISK_BY_LABEL_PATH")"
+    log "WARNING: found existing filesystem with label=$FILESYSTEM_LABEL but no fstab entry configured: $DISK_BY_LABEL_PATH"
+    mount -L "$FILESYSTEM_LABEL" --target "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" >&2 || exit_failure "Mounting existing block device with label $FILESYSTEM_LABEL failed"
+    wait_for_udev_to_settle
+    exit_success "Mounted existing filesystem with label=$FILESYSTEM_LABEL at $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT without fstab entry"
+elif [[ -z "$EXISTING_FSTAB_MOUNT" && -n "$EXISTING_LABEL_MOUNT" ]]; then
+    # The first block checked the case where it's already mounted in the right location with -n $EXISTING_MOUNT,
+    # so if we end up here with an existing label mount, it means the filesystem is mounted somewhere else.
+    # This can happen if the user manually mounted it or perhaps changed their target mount point config.
+    # In this case the user should fixup their fstab entry.  Future work could update fstab automatically.
+    exit_failure "Filesystem with label=$FILESYSTEM_LABEL is unexpectedly mounted: $EXISTING_LABEL_MOUNT"
+fi
+
+# Detect local NVMe disks using device model name.
+mapfile -t DISKS < <(lsblk --paths --noheadings -nodeps -o NAME,MODEL | awk '$0 ~ /Microsoft NVMe Direct Disk( v2)?[[:space:]]*$/ {print $1}' | sort -V || true)
+
+if [[ ${#DISKS[@]} -eq 0 ]]; then
+    if [[ "$AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE" != "true" ]]; then
+        if [[ -L "$SCSI_RESOURCE_DISK_PATH" ]]; then
+            exit_success "No local NVMe disks detected and AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE=$AZURE_EPHEMERAL_DISK_SETUP_SCSI_RESOURCE, exiting without action"
+        fi
+
+        exit_success "No local NVMe disks detected, exiting without action"
+    fi
+
+    if [[ ! -L "$SCSI_RESOURCE_DISK_PATH" ]]; then
+        exit_success "No local NVMe or SCSI resource disks detected, exiting without action"
+    fi
+
+    log "No local NVMe disks detected, using SCSI resource disk at $SCSI_RESOURCE_DISK_PATH"
+    DISKS=("$SCSI_RESOURCE_DISK_PATH")
+else
+    log "Detected local NVMe disks: ${DISKS[*]}"
+fi
+
+for disk in "${DISKS[@]}"; do
+    check_if_block_device_needs_setup "$disk"
+done
+
+# If we have multiple disks, aggregate them using mdadm, if enabled.
+if [[ ${#DISKS[@]} -gt 1 && "$AZURE_EPHEMERAL_DISK_SETUP_AGGREGATION" == "mdadm" ]]; then
+    md="/dev/md/${AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME}_0"
+
+    mdadm --create "$md" \
+        --level=0 \
+        --raid-devices=${#DISKS[@]} \
+        --metadata=1.2 \
+        --chunk="$AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK" \
+        --name="$AZURE_EPHEMERAL_DISK_SETUP_MDADM_NAME" \
+        "${DISKS[@]}" >&2 || exit_failure "Failed to create mdadm array with devices: ${DISKS[*]}"
+    TARGET_DEVICE="$md"
+    EXTRAS=" chunk=$AZURE_EPHEMERAL_DISK_SETUP_MDADM_CHUNK count=${#DISKS[@]}"
+
+    # mdadm has a fairly short timeout to wait for device so we must wait for udev to settle.
+    # [   11.467473] + mdadm --create /dev/md/azure-ephemeral-md_0 --level=0 --raid-devices=2 --metadata=1.2 --chunk=512K --name=azure-ephemeral-md /dev/disk/azure/local/by-serial/95fcd1d0adcd35f70001 /dev/disk/azure/local/by-serial/95fcd1d0adcd35f70002
+    # [   11.516972] mdadm: array /dev/md/azure-ephemeral-md_0 started.
+    # [   15.307223] mdadm: timeout waiting for /dev/md/azure-ephemeral-md_0
+    wait_for_udev_to_settle
+else
+    TARGET_DEVICE="${DISKS[0]}"
+    EXTRAS=""
+    if [[ ${#DISKS[@]} -gt 1 ]]; then
+        log "Multiple disks found but aggregation is disabled. Only using $TARGET_DEVICE"
+    fi
+fi
+
+# Only force reformat if explicitly configured for SCSI resource disk (with some safety checks).
+MKFS_FORCE_FLAG=""
+if [[ "$SCSI_RESOURCE_DISK_FORCE_REFORMAT" == "true" && ${#DISKS[@]} -eq 1 && ${DISKS[0]} == "$SCSI_RESOURCE_DISK_PATH" ]]; then
+    if [[ "$AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE" == "xfs" ]]; then
+        MKFS_FORCE_FLAG="-f"
+    else
+        MKFS_FORCE_FLAG="-F"
+    fi
+fi
+
+log "Formatting $TARGET_DEVICE with $AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE filesystem"
+$MKFS -L "$FILESYSTEM_LABEL" $MKFS_FORCE_FLAG "$TARGET_DEVICE" >&2 || exit_failure "Formatting $TARGET_DEVICE failed"
+
+# Ensure the partition table is updated and udev rules are applied.
+partprobe "$TARGET_DEVICE" || true
+wait_for_udev_to_settle
+
+mkdir -p "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT"
+
+# Update /etc/fstab to persist the mount and cleanup any old entries.
+if [[ ! -w /etc/fstab ]]; then
+    log "WARNING: unable to persist mount to /etc/fstab as it is not writable"
+    mount -L "$FILESYSTEM_LABEL" "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" >&2 || exit_failure "Mounting $TARGET_DEVICE failed"
+else
+    # Clean old fstab entries managed by this service.
+    if grep -q "$FSTAB_COMMENT" /etc/fstab; then
+        log "Cleaning old fstab entries with comment: $FSTAB_COMMENT"
+        sed -i.bak "/$FSTAB_COMMENT/d" /etc/fstab
+    fi
+
+    log "Adding fstab entry for $TARGET_DEVICE at $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT"
+    echo "LABEL=$FILESYSTEM_LABEL $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT $AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE defaults,nofail,$FSTAB_COMMENT 0 2" | tee -a /etc/fstab >&2
+
+    # Ensure systemd is aware of the mount point.
+    systemctl daemon-reload
+    if ! start_and_wait_for_systemd_unit "$SYSTEMD_MOUNT_NAME"; then
+        if ! mount --verbose --target "$AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT" >&2; then
+            exit_failure "Mounting $TARGET_DEVICE failed"
+        fi
+    fi
+fi
+
+wait_for_udev_to_settle
+exit_success "Mounted $TARGET_DEVICE at $AZURE_EPHEMERAL_DISK_SETUP_MOUNT_POINT with fs=${AZURE_EPHEMERAL_DISK_SETUP_FS_TYPE}${EXTRAS}"

@@ -12,7 +12,7 @@ azure-vm-utils-selftest - packaging self-tests
 
 # SYNOPSIS
 
-**azure-vm-utils-selftest [\-\-skip-imds-validation] [\-\-skip-symlink-validation]**
+**azure-vm-utils-selftest [\-\-skip-imds-validation] [\-\-skip-udev-validation]**
 
 # DESCRIPTION
 

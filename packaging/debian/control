@@ -10,7 +10,8 @@ Rules-Requires-Root: no
 Package: azure-vm-utils
 Architecture: any
 Multi-Arch: foreign
-Depends: ${misc:Depends}, ${shlibs:Depends}
+Depends: ${misc:Depends}, ${shlibs:Depends}, mdadm
+Recommends: xfsprogs
 Description: Core utilities and configuration for Linux VMs on Azure
  This package provides a home for core utilities, udev rules and other
  configuration to support Linux VMs on Azure.
