@@ -9,6 +9,7 @@ SERVICE="ephemeral-disk-setup/azure-ephemeral-disk-setup.service"
 CONF="ephemeral-disk-setup/azure-ephemeral-disk-setup.conf"
 OUTPUT="cloud-config-ephemeral-disk-setup.yaml"
 INSTALL_BIN_DIR="/usr/local/bin"
+INSTALL_ETC_DIR="/etc"
 SYSTEMD_SYSTEM_SERVICE_DIR="/etc/systemd/system"
 
 # Validate all input files
@@ -24,7 +25,7 @@ indent_file() {
   awk '{ print "      " $0 }' "$1"
 }
 
-SCRIPT_CONTENT=$(indent_file "$SCRIPT")
+SCRIPT_CONTENT=$(indent_file "$SCRIPT" | sed "s|@AZURE_EPHEMERAL_DISK_SETUP_CONF_INSTALL_DIR@|$INSTALL_ETC_DIR|g")
 
 # Get service with updated install binary directory.
 SERVICE_CONTENT=$(indent_file "$SERVICE" | sed "s|@AZURE_NVME_ID_INSTALL_DIR@|$INSTALL_BIN_DIR|g")
@@ -46,7 +47,7 @@ $SCRIPT_CONTENT
     content: |
 $SERVICE_CONTENT
 
-  - path: /etc/azure-ephemeral-disk-setup.conf
+  - path: $INSTALL_ETC_DIR/azure-ephemeral-disk-setup.conf
     permissions: '0644'
     content: |
 $CONF_CONTENT

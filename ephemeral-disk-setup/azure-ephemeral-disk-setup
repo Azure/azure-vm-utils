@@ -8,7 +8,7 @@ fi
 
 set -xeuo pipefail
 
-CONFIGURATION_FILE="/etc/azure-ephemeral-disk-setup.conf"
+CONFIGURATION_FILE="@AZURE_EPHEMERAL_DISK_SETUP_CONF_INSTALL_DIR@/azure-ephemeral-disk-setup.conf"
 FSTAB_COMMENT="comment=azure-ephemeral-disk-setup"
 SCSI_RESOURCE_DISK_PATH="/dev/disk/azure/resource"
 SCSI_RESOURCE_DISK_FORCE_REFORMAT="false"
