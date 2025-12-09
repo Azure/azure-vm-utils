@@ -22,7 +22,7 @@ This is found in vendor-specific (vs) field which contains various identificatio
 **azure-nvme-id** combines this metadata with the make and model of NVMe device namespaces to identify a device by
 type, name, index, etc. Output options are plain or json.
 
-To suppoort udev rules, \-\-udev option will invoke **azure-nvme-id** in udev mode.
+To support udev rules, \-\-udev option will invoke **azure-nvme-id** in udev mode.
 
 # OPTIONS
 
