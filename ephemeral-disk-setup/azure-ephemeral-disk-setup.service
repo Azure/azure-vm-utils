@@ -1,6 +1,6 @@
 [Unit]
 Description=Format and mount local ephemeral NVMe disks
-After=cloud-init.service cloud-init-network.service
+After=cloud-init.service cloud-init-main.service cloud-init-network.service
 After=local-fs.target
 DefaultDependencies=no
 Before=cloud-init.target
