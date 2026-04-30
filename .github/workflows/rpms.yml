@@ -9,9 +9,12 @@ jobs:
       fail-fast: false
       matrix:
         container:
-          - fedora:41
+          # EOL May 13th, 2026
           - fedora:42
+          - fedora:43
+          - fedora:44
           - fedora:rawhide
+          - ghcr.io/almalinux/10-base:latest
           - ghcr.io/almalinux/9-base:latest
           - ghcr.io/almalinux/8-base:latest
           - mcr.microsoft.com/cbl-mariner/base/core:2.0
@@ -72,7 +75,7 @@ jobs:
       - name: Install rpms
         run: |
           dnf install -y mdadm util-linux
-          rpm -Uvh -i out/*.rpm
+          rpm -Uvh -i --nosignature out/*.rpm
       - name: Verify installation
         run: |
           set -x
