@@ -130,6 +130,20 @@ SKU_CONFIGS = {
         nvme_local_disk_count=10,
         nvme_local_disk_size_gib=gb_to_gib(1920),
     ),
+    "Standard_L8s_v4": SkuConfig(
+        vm_size="Standard_L8s_v4",
+        nvme_only=True,
+        nvme_id_enabled_local=True,
+        nvme_local_disk_count=4,
+        nvme_local_disk_size_gib=gb_to_gib(480),
+    ),
+    "Standard_L80s_v4": SkuConfig(
+        vm_size="Standard_L80s_v4",
+        nvme_only=True,
+        nvme_id_enabled_local=True,
+        nvme_local_disk_count=10,
+        nvme_local_disk_size_gib=gb_to_gib(1920),
+    ),
     "Standard_E2bs_v5": SkuConfig(
         vm_size="Standard_E2bs_v5", nvme_controller_toggle_supported=True
     ),
@@ -167,6 +181,27 @@ SKU_CONFIGS = {
     ),
     "Standard_D32ads_v6": V6SkuConfig(
         vm_size="Standard_D32ads_v6",
+        nvme_local_disk_count=4,
+        nvme_local_disk_size_gib=440,
+    ),
+    "Standard_D2ds_v7": SkuConfig(
+        vm_size="Standard_D2ds_v7",
+        nvme_only=True,
+        nvme_id_enabled_local=True,
+        nvme_local_disk_count=1,
+        nvme_local_disk_size_gib=110,
+    ),
+    "Standard_D32ds_v7": SkuConfig(
+        vm_size="Standard_D32ds_v7",
+        nvme_only=True,
+        nvme_id_enabled_local=True,
+        nvme_local_disk_count=4,
+        nvme_local_disk_size_gib=440,
+    ),
+    "Standard_D32ads_v7": SkuConfig(
+        vm_size="Standard_D32ads_v7",
+        nvme_only=True,
+        nvme_id_enabled_local=True,
         nvme_local_disk_count=4,
         nvme_local_disk_size_gib=440,
     ),
@@ -346,9 +381,6 @@ def get_remote_nvme_disks() -> List[str]:
         "MSFT NVMe Accelerator v1.0"
     )
 
-    assert (
-        len(remote_disk_controllers) <= 1
-    ), f"unexpected number of remote controllers {remote_disk_controllers}"
     return device_sort(
         [
             namespace
@@ -356,6 +388,16 @@ def get_remote_nvme_disks() -> List[str]:
             for namespace in get_nvme_namespace_devices(controller)
         ]
     )
+
+
+def get_nvme_namespace_id(device_name: str) -> int:
+    """Read namespace ID from sysfs for the given NVMe device."""
+    nsid = int(
+        Path(SYS_CLASS_BLOCK, device_name, "nsid").read_text(encoding="utf-8").strip()
+    )
+    if nsid <= 0:
+        raise ValueError(f"invalid namespace ID for {device_name}: {nsid}")
+    return nsid
 
 
 def get_nvme_controllers_with_model(model: str) -> List[str]:
@@ -527,12 +569,16 @@ class DiskInfo:
             ), f"local disk size mismatch: {nvme_local_disk_size_gib} != {local_disk_max_size} for {nvme_local_disks}"
 
         nvme_remote_disks = get_remote_nvme_disks()
-        if nvme_remote_disks:
-            nvme_remote_os_disk = nvme_remote_disks[0]
-            nvme_remote_data_disks = nvme_remote_disks[1:]
-        else:
-            nvme_remote_os_disk = None
-            nvme_remote_data_disks = []
+        nvme_remote_os_disks = [
+            disk for disk in nvme_remote_disks if get_nvme_namespace_id(disk) == 1
+        ]
+        assert (
+            len(nvme_remote_os_disks) <= 1
+        ), f"unexpected number of remote OS disks: {nvme_remote_os_disks}"
+        nvme_remote_os_disk = nvme_remote_os_disks[0] if nvme_remote_os_disks else None
+        nvme_remote_data_disks = [
+            disk for disk in nvme_remote_disks if disk != nvme_remote_os_disk
+        ]
 
         root_device = get_root_block_device()
         root_device_is_nvme = root_device.startswith("/dev/nvme")

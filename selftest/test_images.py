@@ -73,7 +73,7 @@ if not GEN1_VM_SIZES:
     GEN1_VM_SIZES = [
         sku.vm_size
         for sku in selftest.SKU_CONFIGS.values()
-        if sku.vm_size_type == "x64" and not sku.vm_size.endswith("v6")
+        if sku.vm_size_type == "x64" and not sku.nvme_only
     ]
 
 GEN2_IMAGES = [
