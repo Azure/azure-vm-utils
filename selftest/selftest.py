@@ -1039,7 +1039,7 @@ class AzureNvmeIdInfo:
                 self.azure_nvme_id_json_stderr == ""
             ), f"unexpected azure-nvme-id stderr: {self.azure_nvme_id_json_stderr}"
 
-        self._validate_azure_nvme_disks(self.azure_nvme_id_disks, disk_info)
+        self._validate_azure_nvme_disks(self.azure_nvme_id_json_disks, disk_info)
 
         assert all(
             disk.model
@@ -1191,6 +1191,7 @@ class AzureNvmeIdInfo:
             device_path = device["path"]
             model = device["model"]
             properties = device["properties"]
+            nvme_id = ",".join(f"{k}={v}" for k, v in properties.items())
             device_type = properties.pop("type", None)
             device_index = (
                 int(properties.pop("index")) if "index" in properties else None
@@ -1200,7 +1201,7 @@ class AzureNvmeIdInfo:
             azure_nvme_id_device = AzureNvmeIdDevice(
                 device=device_path,
                 model=model,
-                nvme_id=",".join([f"{k}={v}" for k, v in properties.items()]),
+                nvme_id=nvme_id,
                 type=device_type,
                 index=device_index,
                 lun=device_lun,
