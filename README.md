@@ -132,6 +132,10 @@ pytest -xvvvs -k test_gen2
 For convenience, the default spread of VM sizes is assumed if SELFTEST_{ARM64|GEN1|GEN2}_VM_SIZES is unset.
 If unable to allocate VM, test is "skipped".
 
+Each ARM64, Gen1, and Gen2 image/VM-size combination runs with both contiguous
+data disk LUNs (0, 1, 2, 3) and sparse LUNs (1, 3, 5, 7), covering both SCSI
+and NVMe. Test scope can be narrowed with `-k sparse-luns` or `-k contiguous-luns`.
+
 Supported environment variables:
 
 - SELFTEST_ADMIN_USERNAME: admin name to configure VMs with

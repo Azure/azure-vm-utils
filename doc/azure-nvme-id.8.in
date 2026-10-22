@@ -1,4 +1,4 @@
-.TH "azure-nvme-id" "8" "August\ 08,\ 2025" "azure-nvme-id @VERSION@" "User Manual"
+.TH "azure-nvme-id" "8" "October 23, 2026" "azure-nvme-id @VERSION@" "User Manual"
 .hy
 .SH NAME
 .PP
@@ -19,8 +19,11 @@ of NVMe device namespaces to identify a device by type, name, index,
 etc.
 Output options are plain or json.
 .PP
-To suppoort udev rules, --udev option will invoke
-\f[B]azure-nvme-id\f[R] in udev mode.
+JSON output includes \f[CB]path\f[R], \f[CB]nsid\f[R], \f[CB]model\f[R],
+\f[CB]properties\f[R], and \f[CB]vs\f[R] for each namespace.
+.PP
+To support udev rules, --udev option will invoke \f[B]azure-nvme-id\f[R]
+in udev mode.
 .SH OPTIONS
 .TP
 \f[CB]--debug\f[R]

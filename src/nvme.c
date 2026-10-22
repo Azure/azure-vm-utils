@@ -16,24 +16,26 @@
 #include "nvme.h"
 
 /**
- * Given the path to a namespace device, determine the namespace id.
- *
- * Examples:
- * - /dev/nvme0n5 -> returns 5
- * - /dev/nvme2n12 -> returns 12
- * - /dev/nvme100n1 -> returns 1
+ * Query the kernel for a namespace device's namespace ID.
  *
  * @return Namespace ID or -1 on failure.
  */
 int get_nsid_from_namespace_device_path(const char *namespace_path)
 {
-    unsigned int ctrl, nsid;
-
-    if (sscanf(namespace_path, "/dev/nvme%un%u", &ctrl, &nsid) != 2)
+    int fd = open(namespace_path, O_RDONLY);
+    if (fd < 0)
     {
+        fprintf(stderr, "failed to open %s: %m\n", namespace_path);
         return -1;
     }
 
+    int nsid = ioctl(fd, NVME_IOCTL_ID);
+    if (nsid < 0)
+    {
+        fprintf(stderr, "failed NVME_IOCTL_ID ioctl for %s: %m\n", namespace_path);
+    }
+
+    close(fd);
     return nsid;
 }
 
@@ -125,7 +127,7 @@ char *nvme_identify_namespace_vs(const char *device_path, int nsid)
  * Query the NVMe namespace for the vendor specific data.
  *
  * This a helper for nvme_identify_namespace_vs that takes a namespace device
- * path and extracts the namespace id from it.
+ * path and queries the kernel for its namespace ID.
  *
  * @param namespace_path Path to the NVMe namespace device.
  *
@@ -136,7 +138,7 @@ char *nvme_identify_namespace_vs_for_namespace_device(const char *namespace_path
     int nsid = get_nsid_from_namespace_device_path(namespace_path);
     if (nsid < 0)
     {
-        fprintf(stderr, "failed to parse namespace id: %s\n", namespace_path);
+        fprintf(stderr, "failed to get namespace id: %s\n", namespace_path);
         return NULL;
     }
 

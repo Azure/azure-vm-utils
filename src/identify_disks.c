@@ -44,7 +44,7 @@ int is_nvme_namespace(const struct dirent *entry)
  * Identify namespace without using vendor-specific command set.
  * Used as a fallback when vendor-specific command set is not supported.
  */
-char *identify_namespace_without_vs(const char *controller_sys_path, const char *namespace_path)
+char *identify_namespace_without_vs(const char *controller_sys_path, int nsid)
 {
     char model_name[MAX_PATH] = {0};
     char model_path[MAX_PATH];
@@ -75,7 +75,6 @@ char *identify_namespace_without_vs(const char *controller_sys_path, const char 
         // Microsoft Azure NVMe Accelerator v1.0 supports remote OS and data disks.
         // nsid=1 is the OS disk and nsid=2+ for data disks.
         // A data disk's lun id == nsid - 2.
-        int nsid = get_nsid_from_namespace_device_path(namespace_path);
         if (nsid == 1)
         {
             return strdup("type=os");
@@ -158,21 +157,32 @@ void enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct co
     DEBUG_PRINTF("found %d namespace(s) for controller=%s:\n", n, ctrl->name);
     for (int i = 0; i < n; i++)
     {
+        char *id = NULL;
+        char *vs = NULL;
         char namespace_path[MAX_PATH];
         snprintf(namespace_path, sizeof(namespace_path), "/dev/%s", namelist[i]->d_name);
 
-        char *vs = nvme_identify_namespace_vs_for_namespace_device(namespace_path);
-        char *id = NULL;
+        int nsid = get_nsid_from_namespace_device_path(namespace_path);
+        if (nsid < 0)
+        {
+            fprintf(stderr, "failed to get namespace id: %s\n", namespace_path);
+        }
+        else
+        {
+            vs = nvme_identify_namespace_vs(namespace_path, nsid);
+        }
+
         json_object *namespace_obj = json_object_new_object();
         json_object_object_add(namespace_obj, "path", json_object_new_string(namespace_path));
         json_object_object_add(namespace_obj, "model", json_object_new_string(ctrl->model));
+        json_object_object_add(namespace_obj, "nsid", nsid < 0 ? NULL : json_object_new_int(nsid));
         json_object_array_add(namespaces_array, namespace_obj);
 
         if (vs != NULL)
         {
             if (vs[0] == 0)
             {
-                id = identify_namespace_without_vs(ctrl->sys_path, namespace_path);
+                id = identify_namespace_without_vs(ctrl->sys_path, nsid);
             }
             else
             {
