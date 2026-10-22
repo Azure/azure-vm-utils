@@ -19,7 +19,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
         ref: ${{ github.event.sha }}
         fetch-depth: 0
@@ -58,4 +58,4 @@ jobs:
         test -f /usr/share/man/man8/azure-vm-utils-selftest.8.gz
         azure-ephemeral-disk-setup --version
         azure-nvme-id --version
-        azure-vm-utils-selftest --skip-imds-validation --skip-udev-validation
+        sudo azure-vm-utils-selftest --skip-imds-validation --skip-udev-validation
