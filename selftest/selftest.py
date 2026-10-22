@@ -6,6 +6,7 @@
 # --------------------------------------------------------------------------
 
 """Azure VM utilities self-tests script."""
+
 import argparse
 import glob
 import json

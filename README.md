@@ -85,6 +85,17 @@ execute with sudo.
 scp selfcheck/selftest.py $ip: && ssh $ip -- sudo ./selftest.py
 ```
 
+## updating requirements
+
+To refresh both frozen selftest dependency lists from
+[selftest/test-requirements.txt](selftest/test-requirements.txt), run:
+
+```sh
+./scripts/update-selftest-requirements.sh
+```
+
+This requires Docker and uses Python 3.8 and 3.10 containers to generate updated requirements.
+
 ## test_images
 
 To help automate a spread of tests, test_images provides functional testing for a set of pre-existing images,
