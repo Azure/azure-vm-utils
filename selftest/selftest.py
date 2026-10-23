@@ -957,6 +957,7 @@ class AzureNvmeIdDevice:
     lun: Optional[int]
     name: Optional[str]
     extra: Dict[str, str]
+    nsid: Optional[int] = None
 
 
 @dataclass(repr=True)
@@ -1028,16 +1029,15 @@ class AzureNvmeIdInfo:
             ), f"missing azure-nvme-id for {device_name}"
             disk_cfg = azure_nvme_id_disks.get(device_name)
             assert disk_cfg, f"failed to find azure-nvme-id for {device_name}"
-            assert disk_cfg.type in (
-                "os",
-                "data",
-            ), f"unexpected remote disk type {disk_cfg}"
-            if disk_cfg.type == "data":
-                assert (
-                    disk_cfg.lun is not None and disk_cfg.lun >= 0
-                ), f"unexpected remote disk index {disk_cfg}"
-            else:
-                assert disk_cfg.lun is None, f"unexpected remote disk index {disk_cfg}"
+            nsid = get_nvme_namespace_id(device_name)
+            expected_type = "os" if nsid == 1 else "data"
+            expected_lun = None if nsid == 1 else nsid - 2
+            assert (
+                disk_cfg.type == expected_type
+            ), f"unexpected remote disk type for namespace ID {nsid}: {disk_cfg}"
+            assert (
+                disk_cfg.lun == expected_lun
+            ), f"unexpected remote disk lun for namespace ID {nsid}: {disk_cfg}"
             assert not disk_cfg.name, f"unexpected remote disk name {disk_cfg}"
             assert disk_cfg.nvme_id, f"unexpected remote disk id {disk_cfg}"
             assert not disk_cfg.extra, f"unexpected remote disk extra {disk_cfg}"
@@ -1087,6 +1087,13 @@ class AzureNvmeIdInfo:
             ), f"unexpected azure-nvme-id stderr: {self.azure_nvme_id_json_stderr}"
 
         self._validate_azure_nvme_disks(self.azure_nvme_id_json_disks, disk_info)
+
+        for device_name, disk in self.azure_nvme_id_json_disks.items():
+            expected_nsid = get_nvme_namespace_id(device_name)
+            assert disk.nsid == expected_nsid, (
+                f"unexpected namespace ID for {device_name}: "
+                f"{disk.nsid!r} != {expected_nsid}"
+            )
 
         assert all(
             disk.model
@@ -1213,6 +1220,7 @@ class AzureNvmeIdInfo:
         [
             {
                 "path": "/dev/nvme0n33",
+                "nsid": 33,
                 "model": "MSFT NVMe Accelerator v1.0",
                 "properties": {
                     "type": "data",
@@ -1222,6 +1230,7 @@ class AzureNvmeIdInfo:
             },
             {
                 "path": "/dev/nvme1n1",
+                "nsid": 1,
                 "model": "Microsoft NVMe Direct Disk v2",
                 "properties": {
                     "type": "local",
@@ -1248,6 +1257,7 @@ class AzureNvmeIdInfo:
             azure_nvme_id_device = AzureNvmeIdDevice(
                 device=device_path,
                 model=model,
+                nsid=device["nsid"],
                 nvme_id=nvme_id,
                 type=device_type,
                 index=device_index,

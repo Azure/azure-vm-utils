@@ -576,6 +576,11 @@ def delete_after_tag():
     yield (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
 
 
+@pytest.mark.parametrize(
+    "sparse_data_disk_luns",
+    [False, True],
+    ids=["contiguous-luns", "sparse-luns"],
+)
 class TestVMs:
     """Test VMs with different images and sizes."""
 
@@ -592,6 +597,7 @@ class TestVMs:
         public_ip,
         reallocates,
         reboots,
+        sparse_data_disk_luns,
         request,
         ssh_key_path,
         temp_resource_group,
@@ -613,6 +619,7 @@ class TestVMs:
         self.public_ip, self.public_ip_name = public_ip
         self.reallocates = reallocates
         self.reboots = reboots
+        self.sparse_data_disk_luns = sparse_data_disk_luns
         self.request = request
         self.selftest_script_path = (
             Path(os.path.abspath(__file__)).parent / "selftest.py"
@@ -823,7 +830,11 @@ class TestVMs:
                                     },
                                 }
                                 for lun, size_gb in zip(
-                                    (0, 1, 2, 3),
+                                    (
+                                        (1, 3, 5, 7)
+                                        if self.sparse_data_disk_luns
+                                        else (0, 1, 2, 3)
+                                    ),
                                     (100, 200, 300, 400),
                                 )
                             ],
