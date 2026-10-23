@@ -9,16 +9,18 @@
 
 import codecs
 import getpass
+import json
 import logging
 import os
 import shlex
 import subprocess
+import tempfile
 import time
 import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Tuple
 
 import pytest
 
@@ -116,10 +118,13 @@ def _subprocess_run(
     artifact_name: str,
     check: bool = False,
     decode: bool = False,
+    redact_values: Tuple[str, ...] = (),
 ) -> subprocess.CompletedProcess:
     """Run a subprocess command and capture outputs as utf-8."""
     artifact_path = artifacts_path / artifact_name
     printable_cmd = shlex.join(cmd)
+    for value in redact_values:
+        printable_cmd = printable_cmd.replace(value, "<redacted>")
 
     logger.debug("executing command: %s", printable_cmd)
     proc = subprocess.run(
@@ -137,8 +142,13 @@ def _subprocess_run(
         artifact_path.as_posix(),
     )
 
+    for value in redact_values:
+        proc.stdout = proc.stdout.replace(value, "<redacted>")
+        proc.stderr = proc.stderr.replace(value, "<redacted>")
+
     stdout = proc.stdout
     stderr = proc.stderr
+
     if decode:
         # Decode potential byte repr strings from get-boot-log.
         stdout = safe_parse_bytes_literal(stdout)
@@ -679,96 +689,218 @@ class TestVMs:
         if proc.returncode != 0:
             logger.error("failed to delete VM %s: %s", self.vm_name, proc.stderr)
 
-    def _create_vm(self) -> None:
-        """Create a VM."""
-        cmd = [
-            "az",
-            "vm",
-            "create",
-            "--subscription",
-            self.azure_subscription,
-            "--resource-group",
-            self.temp_resource_group,
-            "--location",
-            self.azure_location,
-            "--name",
-            self.vm_name,
-            "--image",
-            self.image,
-            "--size",
-            self.vm_size,
-            "--public-ip-address",
-            self.public_ip_name,
-            "--admin-username",
-            self.admin_username,
-            "--ssh-key-value",
-            f"{self.ssh_key_path}.pub",
-            "--data-disk-sizes-gb",
-            "100",
-            "200",
-            "300",
-            "400",
-            "--accept-term",
-            "--data-disk-delete-option",
-            "Delete",
-            "--nic-delete-option",
-            "Delete",
-            "--os-disk-delete-option",
-            "Delete",
-            "--tags",
-            f"deleteAfter={self.delete_after_tag}",
-            "--nsg",
-            self.nsg_name,
-            "--subnet",
-            self.subnet_name,
-            "--vnet-name",
-            self.vnet_name,
-        ]
-
-        if self.admin_password:
-            cmd += ["--admin-password", self.admin_password]
-
-        proc = _subprocess_run(
-            cmd,
-            artifacts_path=self.artifacts_path,
-            artifact_name="az_vm_create",
-        )
-        if proc.returncode != 0:
-            # Skip the test if the VM creation failed and indicate the reason.
-            if "QuotaExceeded" in proc.stderr:
-                pytest.skip(
-                    f"Unable to create VM due to QuotaExceeded for {self.vm_size}: {proc.stderr}"
-                )
-
-            if "SkuNotAvailable" in proc.stderr:
-                pytest.skip(
-                    f"Unable to create VM due to SkuNotAvailable for {self.vm_size}: {proc.stderr}"
-                )
-
-            pytest.skip(
-                f"Unable to create VM: stdout={proc.stdout} stderr={proc.stderr}"
-            )
-
-        logger.info("created VM:\n%s", self.vm_cfg)
-        (self.artifacts_path / "vm.cfg").write_text(self.vm_cfg)
-
-        # Enable boot diagnostics
+        # A failed ARM deployment can create the NIC without creating the VM.
+        # Make sure it's deleted in case it still exists and ignore any errors.
         proc = _subprocess_run(
             [
                 "az",
-                "vm",
-                "boot-diagnostics",
-                "enable",
+                "network",
+                "nic",
+                "delete",
                 "--subscription",
                 self.azure_subscription,
                 "--resource-group",
                 self.temp_resource_group,
                 "--name",
-                self.vm_name,
+                f"{self.vm_name}-nic",
             ],
             artifacts_path=self.artifacts_path,
-            artifact_name="az_vm_boot_diagnostics_enable",
+            artifact_name="az_nic_delete",
         )
+        if proc.returncode != 0:
+            logger.debug(
+                "failed to delete NIC for VM %s: %s", self.vm_name, proc.stderr
+            )
+
+    def _get_image_reference(self) -> Dict[str, str]:
+        """Convert an image URN or resource ID into an ARM image reference."""
+        image = self.image
+        if image.startswith("/"):
+            if image.lower().startswith("/communitygalleries/"):
+                return {"communityGalleryImageId": image}
+            if image.lower().startswith("/sharedgalleries/"):
+                return {"sharedGalleryImageId": image}
+            return {"id": image}
+
+        parts = image.split(":")
+        if len(parts) != 4 or not all(parts):
+            raise ValueError(f"expected publisher:offer:sku:version image URN: {image}")
+        return dict(zip(("publisher", "offer", "sku", "version"), parts))
+
+    def _build_vm_template(self, image_reference: Dict[str, str]) -> Dict[str, Any]:
+        """Create the NIC and all VM disks in a single ARM deployment."""
+        return {
+            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+                "nicName": {"type": "string", "defaultValue": f"{self.vm_name}-nic"},
+                **(
+                    {"adminPassword": {"type": "secureString"}}
+                    if self.admin_password
+                    else {}
+                ),
+            },
+            "resources": [
+                {
+                    "type": "Microsoft.Network/networkInterfaces",
+                    "apiVersion": "2024-05-01",
+                    "name": "[parameters('nicName')]",
+                    "location": self.azure_location,
+                    "tags": {"deleteAfter": self.delete_after_tag},
+                    "properties": {
+                        "networkSecurityGroup": {
+                            "id": f"[resourceId('Microsoft.Network/networkSecurityGroups', '{self.nsg_name}')]"
+                        },
+                        "ipConfigurations": [
+                            {
+                                "name": "ipconfig1",
+                                "properties": {
+                                    "privateIPAllocationMethod": "Dynamic",
+                                    "subnet": {
+                                        "id": f"[resourceId('Microsoft.Network/virtualNetworks/subnets', '{self.vnet_name}', '{self.subnet_name}')]"
+                                    },
+                                    "publicIPAddress": {
+                                        "id": f"[resourceId('Microsoft.Network/publicIPAddresses', '{self.public_ip_name}')]"
+                                    },
+                                },
+                            }
+                        ],
+                    },
+                },
+                {
+                    "type": "Microsoft.Compute/virtualMachines",
+                    "apiVersion": "2024-03-01",
+                    "name": self.vm_name,
+                    "location": self.azure_location,
+                    "tags": {"deleteAfter": self.delete_after_tag},
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Network/networkInterfaces', parameters('nicName'))]"
+                    ],
+                    "properties": {
+                        "hardwareProfile": {"vmSize": self.vm_size},
+                        "osProfile": {
+                            "computerName": self.vm_name,
+                            "adminUsername": self.admin_username,
+                            **(
+                                {"adminPassword": "[parameters('adminPassword')]"}
+                                if self.admin_password
+                                else {}
+                            ),
+                            "linuxConfiguration": {
+                                "disablePasswordAuthentication": not bool(
+                                    self.admin_password
+                                ),
+                                "ssh": {
+                                    "publicKeys": [
+                                        {
+                                            "path": f"/home/{self.admin_username}/.ssh/authorized_keys",
+                                            "keyData": Path(f"{self.ssh_key_path}.pub")
+                                            .read_text(encoding="utf-8")
+                                            .strip(),
+                                        }
+                                    ]
+                                },
+                            },
+                        },
+                        "storageProfile": {
+                            "imageReference": image_reference,
+                            "osDisk": {
+                                "createOption": "FromImage",
+                                "caching": "ReadWrite",
+                                "deleteOption": "Delete",
+                                "managedDisk": {"storageAccountType": "Premium_LRS"},
+                            },
+                            "dataDisks": [
+                                {
+                                    "lun": lun,
+                                    "name": f"{self.vm_name}-lun-{lun}",
+                                    "createOption": "Empty",
+                                    "diskSizeGB": size_gb,
+                                    "caching": "None",
+                                    "deleteOption": "Delete",
+                                    "managedDisk": {
+                                        "storageAccountType": "Premium_LRS"
+                                    },
+                                }
+                                for lun, size_gb in zip(
+                                    (0, 1, 2, 3),
+                                    (100, 200, 300, 400),
+                                )
+                            ],
+                        },
+                        "networkProfile": {
+                            "networkInterfaces": [
+                                {
+                                    "id": "[resourceId('Microsoft.Network/networkInterfaces', parameters('nicName'))]",
+                                    "properties": {"deleteOption": "Delete"},
+                                }
+                            ]
+                        },
+                        "diagnosticsProfile": {"bootDiagnostics": {"enabled": True}},
+                    },
+                },
+            ],
+        }
+
+    def _create_vm(self) -> None:
+        """Deploy a VM with its complete disk layout present at first boot."""
+        reference = self._get_image_reference()
+        parameters = (
+            ["--parameters", f"adminPassword={self.admin_password}"]
+            if self.admin_password
+            else []
+        )
+
+        with tempfile.TemporaryDirectory(prefix="selftest-template-") as directory:
+            template_path = Path(directory) / "vm-template.json"
+            template_path.write_text(
+                json.dumps(self._build_vm_template(reference)),
+                encoding="utf-8",
+            )
+            proc = _subprocess_run(
+                [
+                    "az",
+                    "deployment",
+                    "group",
+                    "create",
+                    "--subscription",
+                    self.azure_subscription,
+                    "--resource-group",
+                    self.temp_resource_group,
+                    "--name",
+                    self.vm_name,
+                    "--mode",
+                    "Incremental",
+                    "--template-file",
+                    str(template_path),
+                    "--query",
+                    "properties.provisioningState",
+                    "--output",
+                    "tsv",
+                ]
+                + parameters,
+                artifacts_path=self.artifacts_path,
+                artifact_name="az_vm_create",
+                redact_values=(self.admin_password,) if self.admin_password else (),
+            )
+
+        if proc.returncode != 0:
+            for code in (
+                "QuotaExceeded",
+                "SkuNotAvailable",
+                "AllocationFailed",
+                f"The requested VM size {self.vm_size} is not available in the current region.",
+            ):
+                if code in proc.stderr:
+                    pytest.skip(
+                        f"Unable to create VM due to {code} for {self.vm_size}: {proc.stderr}"
+                    )
+            raise RuntimeError(
+                f"VM deployment failed: stdout={proc.stdout} stderr={proc.stderr}"
+            )
+
+        logger.info("created VM:\n%s", self.vm_cfg)
+        (self.artifacts_path / "vm.cfg").write_text(self.vm_cfg)
 
     def _execute_ssh_command(
         self, command: List[str], *, artifact_name: str, decode: bool = False
