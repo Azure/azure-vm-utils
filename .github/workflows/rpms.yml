@@ -86,6 +86,7 @@ jobs:
           test -f /usr/lib/systemd/network/01-azure-unmanaged-sriov.network
           test -f /usr/lib/systemd/system/azure-ephemeral-disk-setup.service
           test -f /usr/lib/udev/rules.d/10-azure-unmanaged-sriov.rules
+          test -f /usr/lib/udev/rules.d/10-mana-cqe.rules
           test -f /usr/lib/udev/rules.d/80-azure-disk.rules
           test -x /usr/sbin/azure-ephemeral-disk-setup  || test -x /usr/bin/azure-ephemeral-disk-setup
           test -x /usr/sbin/azure-nvme-id || test -x /usr/bin/azure-nvme-id
