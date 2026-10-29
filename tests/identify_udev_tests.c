@@ -5,6 +5,7 @@
  */
 
 #include <ctype.h>
+#include <errno.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -20,6 +21,20 @@
 #include "capture.h"
 #include "identify_udev.h"
 #include "nvme.h"
+
+char *__real_strdup(const char *str);
+
+char *__wrap_strdup(const char *str)
+{
+    check_expected_ptr(str);
+
+    char *result = mock_ptr_type(char *);
+    if (result == NULL)
+    {
+        errno = mock_type(int);
+    }
+    return result;
+}
 
 char *__wrap_nvme_identify_namespace_vs_for_namespace_device(const char *namespace_path)
 {
@@ -51,11 +66,31 @@ static void test_print_udev_key_value(void **state)
     assert_string_equal(capture_stderr(), "");
 }
 
+static void test_print_udev_key_values_allocation_failure(void **state)
+{
+    (void)state; // Unused parameter
+
+    char vs[] = "type=local";
+
+    expect_string(__wrap_strdup, str, vs);
+    will_return(__wrap_strdup, NULL);
+    will_return(__wrap_strdup, ENOMEM);
+
+    int result = print_udev_key_values_for_vs(vs);
+
+    assert_int_equal(result, 1);
+    assert_string_equal(capture_stderr(), "strdup() failed: Cannot allocate memory\n");
+    assert_string_equal(capture_stdout(), "");
+}
+
 static void test_print_udev_key_values_for_vs_success(void **state)
 {
     (void)state; // Unused parameter
 
     char vs[] = "type=local,index=2,name=nvme-600G-2";
+
+    expect_string(__wrap_strdup, str, vs);
+    will_return(__wrap_strdup, __real_strdup(vs));
 
     int result = print_udev_key_values_for_vs(vs);
 
@@ -72,6 +107,9 @@ static void test_print_udev_key_values_for_vs_failure(void **state)
 
     char vs[] = "type=local,index=2,name";
 
+    expect_string(__wrap_strdup, str, vs);
+    will_return(__wrap_strdup, __real_strdup(vs));
+
     int result = print_udev_key_values_for_vs(vs);
 
     assert_int_equal(result, 1);
@@ -80,15 +118,37 @@ static void test_print_udev_key_values_for_vs_failure(void **state)
                                           "AZURE_DISK_INDEX=2\n");
 }
 
+static void test_identify_udev_device_allocation_failure(void **state)
+{
+    (void)state; // Unused parameter
+
+    setenv("DEVNAME", "/dev/nvme0n5", 1);
+    char *vs = __real_strdup("type=local");
+
+    expect_string(__wrap_nvme_identify_namespace_vs_for_namespace_device, namespace_path, "/dev/nvme0n5");
+    will_return(__wrap_nvme_identify_namespace_vs_for_namespace_device, vs);
+    expect_string(__wrap_strdup, str, vs);
+    will_return(__wrap_strdup, NULL);
+    will_return(__wrap_strdup, ENOMEM);
+
+    int result = identify_udev_device();
+
+    assert_int_equal(result, 1);
+    assert_string_equal(capture_stderr(), "strdup() failed: Cannot allocate memory\n");
+    assert_string_equal(capture_stdout(), "AZURE_DISK_VS=type=local\n");
+}
+
 static void test_identify_udev_device_success(void **state)
 {
     (void)state; // Unused parameter
 
     setenv("DEVNAME", "/dev/nvme0n5", 1);
-    const char *vs = strdup("type=local,index=2,name=nvme-600G-2");
+    const char *vs = __real_strdup("type=local,index=2,name=nvme-600G-2");
 
     expect_string(__wrap_nvme_identify_namespace_vs_for_namespace_device, namespace_path, "/dev/nvme0n5");
     will_return(__wrap_nvme_identify_namespace_vs_for_namespace_device, vs);
+    expect_string(__wrap_strdup, str, vs);
+    will_return(__wrap_strdup, __real_strdup(vs));
 
     int result = identify_udev_device();
 
@@ -133,8 +193,10 @@ int main(void)
 {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test_setup_teardown(test_print_udev_key_value, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_print_udev_key_values_allocation_failure, setup, teardown),
         cmocka_unit_test_setup_teardown(test_print_udev_key_values_for_vs_success, setup, teardown),
         cmocka_unit_test_setup_teardown(test_print_udev_key_values_for_vs_failure, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_udev_device_allocation_failure, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_udev_device_success, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_udev_device_no_devname, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_udev_device_vs_failure, setup, teardown),

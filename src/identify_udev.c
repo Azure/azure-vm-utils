@@ -39,6 +39,12 @@ void print_udev_key_value(const char *key, const char *value)
 int print_udev_key_values_for_vs(char *vs)
 {
     char *vs_copy = strdup(vs);
+    if (vs_copy == NULL)
+    {
+        fprintf(stderr, "strdup() failed: %m\n");
+        return 1;
+    }
+
     char *outer_saveptr = NULL;
     char *inner_saveptr = NULL;
 
@@ -94,8 +100,8 @@ int identify_udev_device(void)
     }
 
     printf("AZURE_DISK_VS=%s\n", vs);
-    print_udev_key_values_for_vs(vs);
+    int result = print_udev_key_values_for_vs(vs);
     free(vs);
 
-    return 0;
+    return result;
 }
