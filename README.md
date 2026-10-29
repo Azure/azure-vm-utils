@@ -136,6 +136,11 @@ Each ARM64, Gen1, and Gen2 image/VM-size combination runs with both contiguous
 data disk LUNs (0, 1, 2, 3) and sparse LUNs (1, 3, 5, 7), covering both SCSI
 and NVMe. Test scope can be narrowed with `-k sparse-luns` or `-k contiguous-luns`.
 
+By default these tests validate the utilities already installed in each image.
+Use `SELFTEST_INSTALL_FROM_SOURCE=1` to instead build and install from source
+matching the current working tree. Source-install mode rebuilds the running
+kernel's initramfs and performs a mandatory reboot before the first selftest.
+
 Supported environment variables:
 
 - SELFTEST_ADMIN_USERNAME: admin name to configure VMs with
@@ -146,6 +151,7 @@ Supported environment variables:
 - SELFTEST_HOLD_FAILURES: skip cleanup for failures
 - SELFTEST_REBOOTS: number of reboots to perform in test (default=50)
 - SELFTEST_RESOURCE_GROUP: optional RG to use, otherwise one is created
+- SELFTEST_INSTALL_FROM_SOURCE: `1` to install from working tree source
 
 # Contributing
 
