@@ -1,4 +1,5 @@
 #include <dirent.h>
+#include <errno.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -22,6 +23,19 @@
 #define MSFT_NVME_ACCELERATOR_MODEL_V1 "MSFT NVMe Accelerator v1.0              \n"
 
 char *fake_sys_class_nvme_path = "/sys/class/nvme";
+
+char *__real_strdup(const char *str);
+
+char *__wrap_strdup(const char *str)
+{
+    int error = mock_type(int);
+    if (error != 0)
+    {
+        errno = error;
+        return NULL;
+    }
+    return __real_strdup(str);
+}
 
 int __wrap_get_nsid_from_namespace_device_path(const char *namespace_path)
 {
@@ -131,7 +145,7 @@ static int setup(void **state)
         return -1;
     }
 
-    *state = strdup(temp_path);
+    *state = __real_strdup(temp_path);
     fake_sys_class_nvme_path = *state;
 
     return 0;
@@ -172,7 +186,7 @@ static void _setup_nvme1_microsoft_one_namespace(void)
     create_file(fake_sys_class_nvme_path, "nvme1/model", "Unknown model");
     create_dir(fake_sys_class_nvme_path, "nvme1/nvme1n1");
 
-    expect_namespace_vs("/dev/nvme1n1", 1, strdup("key1=nvme1n1value1,key2=nvme1n1value2"));
+    expect_namespace_vs("/dev/nvme1n1", 1, __real_strdup("key1=nvme1n1value1,key2=nvme1n1value2"));
 }
 
 /**
@@ -185,8 +199,8 @@ static void _setup_nvme2_microsoft_two_namespaces(void)
     create_dir(fake_sys_class_nvme_path, "nvme2/nvme2n1");
     create_dir(fake_sys_class_nvme_path, "nvme2/nvme2n2");
 
-    expect_namespace_vs("/dev/nvme2n1", 1, strdup("key1=nvme2n1value1,key2=nvme2n1value2"));
-    expect_namespace_vs("/dev/nvme2n2", 2, strdup("key1=nvme2n2value1,key2=nvme2n2value2"));
+    expect_namespace_vs("/dev/nvme2n1", 1, __real_strdup("key1=nvme2n1value1,key2=nvme2n1value2"));
+    expect_namespace_vs("/dev/nvme2n2", 2, __real_strdup("key1=nvme2n2value1,key2=nvme2n2value2"));
 }
 
 // No nvme3.
@@ -216,12 +230,12 @@ static void _setup_nvme5_microsoft_mixed_namespaces(void)
     create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n32");
     create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n315");
 
-    expect_namespace_vs("/dev/nvme5n1", 1, strdup("key1=nvme5n1value1,key2=nvme5n1value2"));
-    expect_namespace_vs("/dev/nvme5n2", 2, strdup(""));
+    expect_namespace_vs("/dev/nvme5n1", 1, __real_strdup("key1=nvme5n1value1,key2=nvme5n1value2"));
+    expect_namespace_vs("/dev/nvme5n2", 2, __real_strdup(""));
     expect_namespace_vs("/dev/nvme5n3", 3, NULL);
-    expect_namespace_vs("/dev/nvme5n4", 4, strdup("key1=nvme5n4value1,key2=nvme5n4value2"));
-    expect_namespace_vs("/dev/nvme5n32", 32, strdup("key1=nvme5n32value1"));
-    expect_namespace_vs("/dev/nvme5n315", 315, strdup("key1=nvme5n315value1"));
+    expect_namespace_vs("/dev/nvme5n4", 4, __real_strdup("key1=nvme5n4value1,key2=nvme5n4value2"));
+    expect_namespace_vs("/dev/nvme5n32", 32, __real_strdup("key1=nvme5n32value1"));
+    expect_namespace_vs("/dev/nvme5n315", 315, __real_strdup("key1=nvme5n315value1"));
 }
 
 /**
@@ -233,7 +247,7 @@ static void _setup_nvme6_remote_accelerator_v1_with_vs(void)
     create_dir(fake_sys_class_nvme_path, "nvme6/nvme6n1");
     create_file(fake_sys_class_nvme_path, "nvme6/model", MSFT_NVME_ACCELERATOR_MODEL_V1);
 
-    expect_namespace_vs("/dev/nvme6n1", 1, strdup("key1=nvme6n1value1,key2=nvme6n1value2"));
+    expect_namespace_vs("/dev/nvme6n1", 1, __real_strdup("key1=nvme6n1value1,key2=nvme6n1value2"));
 }
 
 /**
@@ -249,11 +263,11 @@ static void _setup_nvme7_remote_accelerator_v1_without_vs(void)
     create_dir(fake_sys_class_nvme_path, "nvme7/nvme7n4");
     create_dir(fake_sys_class_nvme_path, "nvme7/nvme7n9");
 
-    expect_namespace_vs("/dev/nvme7n1", 1, strdup(""));
-    expect_namespace_vs("/dev/nvme7n2", 2, strdup(""));
-    expect_namespace_vs("/dev/nvme7n3", 3, strdup(""));
-    expect_namespace_vs("/dev/nvme7n4", 4, strdup(""));
-    expect_namespace_vs("/dev/nvme7n9", 9, strdup(""));
+    expect_namespace_vs("/dev/nvme7n1", 1, __real_strdup(""));
+    expect_namespace_vs("/dev/nvme7n2", 2, __real_strdup(""));
+    expect_namespace_vs("/dev/nvme7n3", 3, __real_strdup(""));
+    expect_namespace_vs("/dev/nvme7n4", 4, __real_strdup(""));
+    expect_namespace_vs("/dev/nvme7n9", 9, __real_strdup(""));
 }
 
 /**
@@ -265,7 +279,7 @@ static void _setup_nvme8_direct_disk_v1_without_vs(void)
     create_file(fake_sys_class_nvme_path, "nvme8/model", MICROSOFT_NVME_DIRECT_DISK_V1);
     create_dir(fake_sys_class_nvme_path, "nvme8/nvme8n1");
 
-    expect_namespace_vs("/dev/nvme8n1", 1, strdup(""));
+    expect_namespace_vs("/dev/nvme8n1", 1, __real_strdup(""));
 }
 
 /**
@@ -278,8 +292,8 @@ static void _setup_nvme9_direct_disk_v2(void)
     create_dir(fake_sys_class_nvme_path, "nvme9/nvme9n1");
     create_dir(fake_sys_class_nvme_path, "nvme9/nvme9n2");
 
-    expect_namespace_vs("/dev/nvme9n1", 1, strdup("type=local,index=0,name=nvme-500G-0"));
-    expect_namespace_vs("/dev/nvme9n2", 2, strdup("type=local,index=1,name=nvme-500G-1"));
+    expect_namespace_vs("/dev/nvme9n1", 1, __real_strdup("type=local,index=0,name=nvme-500G-0"));
+    expect_namespace_vs("/dev/nvme9n2", 2, __real_strdup("type=local,index=1,name=nvme-500G-1"));
 }
 
 /**
@@ -291,7 +305,7 @@ static void _setup_nvme10_direct_disk_v2_missing_vs(void)
     create_file(fake_sys_class_nvme_path, "nvme10/model", MICROSOFT_NVME_DIRECT_DISK_V2);
     create_dir(fake_sys_class_nvme_path, "nvme10/nvme10n1");
 
-    expect_namespace_vs("/dev/nvme10n1", 1, strdup(""));
+    expect_namespace_vs("/dev/nvme10n1", 1, __real_strdup(""));
 }
 
 /**
@@ -303,7 +317,7 @@ static void _setup_nvme11_non_integer_lun_and_index(void)
     create_file(fake_sys_class_nvme_path, "nvme11/model", "Unknown model");
     create_dir(fake_sys_class_nvme_path, "nvme11/nvme11n1");
 
-    expect_namespace_vs("/dev/nvme11n1", 1, strdup("type=local,index=foo,lun=bar"));
+    expect_namespace_vs("/dev/nvme11n1", 1, __real_strdup("type=local,index=foo,lun=bar"));
 }
 
 static void test_trim_trailing_whitespace(void **state)
@@ -338,6 +352,8 @@ static void test_identify_disks_no_sys_class_nvme_present(void **state)
              fake_sys_class_nvme_path);
     remove_temp_dir(fake_sys_class_nvme_path);
 
+    will_return_maybe(__wrap_strdup, 0);
+
     struct context ctx = {.output_format = PLAIN};
     int result = identify_disks(&ctx);
 
@@ -349,6 +365,8 @@ static void test_identify_disks_no_sys_class_nvme_present(void **state)
 static void test_identify_disks_sys_class_nvme_empty(void **state)
 {
     (void)state; // Unused parameter
+
+    will_return_maybe(__wrap_strdup, 0);
 
     struct context ctx = {.output_format = PLAIN};
     int result = identify_disks(&ctx);
@@ -408,6 +426,11 @@ static void test_identify_disks(void **state)
         if (test_cases[i].setup_func)
             test_cases[i].setup_func();
 
+        if (i == 0)
+        {
+            will_return_maybe(__wrap_strdup, 0);
+        }
+
         struct context ctx = {.output_format = PLAIN};
         int result = identify_disks(&ctx);
 
@@ -432,6 +455,8 @@ static void test_identify_disks_combined(void **state)
     _setup_nvme9_direct_disk_v2();
     _setup_nvme10_direct_disk_v2_missing_vs();
     _setup_nvme11_non_integer_lun_and_index();
+
+    will_return_maybe(__wrap_strdup, 0);
 
     struct context ctx = {.output_format = PLAIN};
     int result = identify_disks(&ctx);
@@ -526,6 +551,8 @@ static void test_identify_disks_combined_json(void **state)
     _setup_nvme10_direct_disk_v2_missing_vs();
     _setup_nvme11_non_integer_lun_and_index();
 
+    will_return_maybe(__wrap_strdup, 0);
+
     struct context ctx = {.output_format = JSON};
     int result = identify_disks(&ctx);
 
@@ -562,8 +589,10 @@ static void test_identify_disks_nonmatching_nsid(void **state)
     for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++)
     {
         create_dir(fake_sys_class_nvme_path, test_cases[i].sys_path);
-        expect_namespace_vs(test_cases[i].path, test_cases[i].nsid, strdup(""));
+        expect_namespace_vs(test_cases[i].path, test_cases[i].nsid, __real_strdup(""));
     }
+
+    will_return_maybe(__wrap_strdup, 0);
 
     struct context ctx = {.output_format = PLAIN};
     assert_int_equal(identify_disks(&ctx), 0);
@@ -582,7 +611,9 @@ static void test_identify_disks_nonmatching_nsid_json(void **state)
     create_file(fake_sys_class_nvme_path, "nvme0/device/vendor", "0x1414");
     create_file(fake_sys_class_nvme_path, "nvme0/model", MSFT_NVME_ACCELERATOR_MODEL_V1);
     create_dir(fake_sys_class_nvme_path, "nvme0/nvme0n1");
-    expect_namespace_vs("/dev/nvme0n1", 9, strdup(""));
+    expect_namespace_vs("/dev/nvme0n1", 9, __real_strdup(""));
+
+    will_return_maybe(__wrap_strdup, 0);
 
     struct context ctx = {.output_format = JSON};
     assert_int_equal(identify_disks(&ctx), 0);
@@ -603,7 +634,9 @@ static void test_identify_disks_nsid_failure(void **state)
 
     expect_string(__wrap_get_nsid_from_namespace_device_path, namespace_path, "/dev/nvme0n1");
     will_return(__wrap_get_nsid_from_namespace_device_path, -1);
-    expect_namespace_vs("/dev/nvme0n2", 9, strdup(""));
+    expect_namespace_vs("/dev/nvme0n2", 9, __real_strdup(""));
+
+    will_return_maybe(__wrap_strdup, 0);
 
     struct context ctx = {.output_format = PLAIN};
     assert_int_equal(identify_disks(&ctx), 0);
@@ -622,7 +655,9 @@ static void test_identify_disks_nsid_failure_json(void **state)
 
     expect_string(__wrap_get_nsid_from_namespace_device_path, namespace_path, "/dev/nvme0n1");
     will_return(__wrap_get_nsid_from_namespace_device_path, -1);
-    expect_namespace_vs("/dev/nvme0n2", 9, strdup(""));
+    expect_namespace_vs("/dev/nvme0n2", 9, __real_strdup(""));
+
+    will_return_maybe(__wrap_strdup, 0);
 
     struct context ctx = {.output_format = JSON};
     assert_int_equal(identify_disks(&ctx), 0);
@@ -646,6 +681,8 @@ static void test_identify_disks_controller_failure(void **state)
     create_dir(fake_sys_class_nvme_path, "nvme2/nvme2n1");
     _setup_nvme6_remote_accelerator_v1_with_vs();
 
+    will_return_maybe(__wrap_strdup, 0);
+
     struct context ctx = {.output_format = PLAIN};
     assert_int_equal(identify_disks(&ctx), 0);
     assert_string_equal(capture_stderr(), "failed to initialize NVMe controller nvme0\n"
@@ -666,6 +703,8 @@ static void test_identify_disks_controller_failure_json(void **state)
     create_dir(fake_sys_class_nvme_path, "nvme2/nvme2n1");
     _setup_nvme6_remote_accelerator_v1_with_vs();
 
+    will_return_maybe(__wrap_strdup, 0);
+
     struct context ctx = {.output_format = JSON};
     assert_int_equal(identify_disks(&ctx), 0);
     assert_string_equal(capture_stderr(), "failed to initialize NVMe controller nvme0\n"
@@ -677,6 +716,56 @@ static void test_identify_disks_controller_failure_json(void **state)
                                      "{\"path\":\"/dev/nvme6n1\",\"nsid\":1,\"model\":\"MSFT NVMe Accelerator v1.0\","
                                      "\"properties\":{\"key1\":\"nvme6n1value1\",\"key2\":\"nvme6n1value2\"},"
                                      "\"vs\":\"key1=nvme6n1value1,key2=nvme6n1value2\"}]"));
+}
+
+static void test_identify_disks_parser_allocation_failure(void **state)
+{
+    (void)state;
+
+    _setup_nvme1_microsoft_one_namespace();
+    create_file(fake_sys_class_nvme_path, "nvme2/device/vendor", "0x1414");
+    create_file(fake_sys_class_nvme_path, "nvme2/model", "Unknown model");
+    create_dir(fake_sys_class_nvme_path, "nvme2/nvme2n1");
+    expect_namespace_vs("/dev/nvme2n1", 1, __real_strdup("key1=nvme2n1value1,key2=nvme2n1value2"));
+
+    will_return(__wrap_strdup, 0);
+    will_return(__wrap_strdup, ENOMEM);
+    will_return_count(__wrap_strdup, 0, 2);
+
+    struct context ctx = {.output_format = PLAIN};
+    int result = identify_disks(&ctx);
+
+    assert_int_equal(result, 1);
+    assert_string_equal(capture_stderr(), "strdup() failed: Cannot allocate memory\n");
+    assert_string_equal(capture_stdout(), "/dev/nvme1n1: key1=nvme1n1value1,key2=nvme1n1value2\n"
+                                          "/dev/nvme2n1: key1=nvme2n1value1,key2=nvme2n1value2\n");
+}
+
+static void test_identify_disks_parser_allocation_failure_json(void **state)
+{
+    (void)state;
+
+    _setup_nvme1_microsoft_one_namespace();
+    create_file(fake_sys_class_nvme_path, "nvme2/device/vendor", "0x1414");
+    create_file(fake_sys_class_nvme_path, "nvme2/model", "Unknown model");
+    create_dir(fake_sys_class_nvme_path, "nvme2/nvme2n1");
+    expect_namespace_vs("/dev/nvme2n1", 1, __real_strdup("key1=nvme2n1value1,key2=nvme2n1value2"));
+
+    will_return(__wrap_strdup, 0);
+    will_return(__wrap_strdup, ENOMEM);
+    will_return_count(__wrap_strdup, 0, 2);
+
+    struct context ctx = {.output_format = JSON};
+    int result = identify_disks(&ctx);
+
+    assert_int_equal(result, 1);
+    assert_string_equal(capture_stderr(), "strdup() failed: Cannot allocate memory\n");
+    assert_true(compare_json_strings(capture_stdout(),
+                                     "[{\"path\":\"/dev/nvme1n1\",\"nsid\":1,\"model\":\"Unknown model\","
+                                     "\"properties\":null,\"vs\":\"key1=nvme1n1value1,key2=nvme1n1value2\"},"
+                                     "{\"path\":\"/dev/nvme2n1\",\"nsid\":1,\"model\":\"Unknown model\","
+                                     "\"properties\":{\"key1\":\"nvme2n1value1\",\"key2\":\"nvme2n1value2\"},"
+                                     "\"vs\":\"key1=nvme2n1value1,key2=nvme2n1value2\"}]"));
 }
 
 int main(void)
@@ -694,6 +783,8 @@ int main(void)
         cmocka_unit_test_setup_teardown(test_identify_disks_nonmatching_nsid_json, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_nsid_failure, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_nsid_failure_json, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_disks_parser_allocation_failure, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_disks_parser_allocation_failure_json, setup, teardown),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);

@@ -105,6 +105,13 @@ json_object *parse_vs_string(const char *vs)
 {
     json_object *vs_obj = json_object_new_object();
     char *vs_copy = strdup(vs);
+    if (vs_copy == NULL)
+    {
+        fprintf(stderr, "strdup() failed: %m\n");
+        json_object_put(vs_obj);
+        return NULL;
+    }
+
     char *token;
     char *rest = vs_copy;
 
@@ -142,8 +149,8 @@ json_object *parse_vs_string(const char *vs)
 /**
  * Enumerate namespaces for a controller.
  */
-void enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct context *ctx,
-                                         json_object *namespaces_array)
+int enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct context *ctx,
+                                        json_object *namespaces_array)
 {
     struct dirent **namelist;
 
@@ -151,9 +158,10 @@ void enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct co
     if (n < 0)
     {
         fprintf(stderr, "failed scandir for %s: %m\n", ctrl->sys_path);
-        return;
+        return 0;
     }
 
+    int result = 0;
     DEBUG_PRINTF("found %d namespace(s) for controller=%s:\n", n, ctrl->name);
     for (int i = 0; i < n; i++)
     {
@@ -197,7 +205,12 @@ void enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct co
 
         if (id != NULL)
         {
-            json_object_object_add(namespace_obj, "properties", parse_vs_string(id));
+            json_object *properties = parse_vs_string(id);
+            if (properties == NULL)
+            {
+                result = 1;
+            }
+            json_object_object_add(namespace_obj, "properties", properties);
             free(id);
         }
         else
@@ -219,6 +232,7 @@ void enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct co
     }
 
     free(namelist);
+    return result;
 }
 
 /**
@@ -304,6 +318,7 @@ int identify_disks(struct context *ctx)
 {
     struct dirent **namelist = NULL;
     json_object *namespaces_array = json_object_new_array();
+    int result = 0;
 
     int n = scandir(SYS_CLASS_NVME_PATH, &namelist, is_azure_nvme_controller, versionsort);
     if (n < 0)
@@ -319,7 +334,10 @@ int identify_disks(struct context *ctx)
 
         if (initialize_nvme_controller(&ctrl, namelist[i]->d_name))
         {
-            enumerate_namespaces_for_controller(&ctrl, ctx, namespaces_array);
+            if (enumerate_namespaces_for_controller(&ctrl, ctx, namespaces_array) != 0)
+            {
+                result = 1;
+            }
         }
         else
         {
@@ -336,8 +354,8 @@ int identify_disks(struct context *ctx)
 
         const char *json_output = json_object_to_json_string_ext(namespaces_array, flags);
         printf("%s\n", json_output);
-        json_object_put(namespaces_array);
     }
 
-    return 0;
+    json_object_put(namespaces_array);
+    return result;
 }

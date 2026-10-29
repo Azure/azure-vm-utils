@@ -29,7 +29,7 @@ add_test_executable(debug_tests
 )
 
 add_test_executable(identify_disks_tests
-    WRAPPED_FUNCTIONS nvme_identify_namespace_vs get_nsid_from_namespace_device_path
+    WRAPPED_FUNCTIONS nvme_identify_namespace_vs get_nsid_from_namespace_device_path strdup
     SOURCES src/debug.c src/identify_disks.c src/nvme.c tests/identify_disks_tests.c
     CFLAGS -DUNIT_TESTING_SYS_CLASS_NVME=1
 )
