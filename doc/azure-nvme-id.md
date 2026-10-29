@@ -24,6 +24,9 @@ type, name, index, etc. Output options are plain or json.
 
 JSON output includes `path`, `nsid`, `model`, `properties`, and `vs` for each namespace.
 
+Controllers whose model cannot be read from sysfs are skipped with a diagnostic on stderr.
+Other controllers are still processed.
+
 To support udev rules, \-\-udev option will invoke **azure-nvme-id** in udev mode.
 
 # OPTIONS

@@ -317,8 +317,14 @@ int identify_disks(struct context *ctx)
     {
         struct nvme_controller ctrl;
 
-        initialize_nvme_controller(&ctrl, namelist[i]->d_name);
-        enumerate_namespaces_for_controller(&ctrl, ctx, namespaces_array);
+        if (initialize_nvme_controller(&ctrl, namelist[i]->d_name))
+        {
+            enumerate_namespaces_for_controller(&ctrl, ctx, namespaces_array);
+        }
+        else
+        {
+            fprintf(stderr, "failed to initialize NVMe controller %s\n", namelist[i]->d_name);
+        }
         free(namelist[i]);
     }
 
