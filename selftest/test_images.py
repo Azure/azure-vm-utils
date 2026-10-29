@@ -9,18 +9,21 @@
 
 import codecs
 import getpass
+import hashlib
 import json
 import logging
 import os
+import re
 import shlex
 import subprocess
+import tarfile
 import tempfile
 import time
 import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
@@ -119,6 +122,7 @@ def _subprocess_run(
     check: bool = False,
     decode: bool = False,
     redact_values: Tuple[str, ...] = (),
+    timeout: Optional[float] = None,
 ) -> subprocess.CompletedProcess:
     """Run a subprocess command and capture outputs as utf-8."""
     artifact_path = artifacts_path / artifact_name
@@ -127,14 +131,46 @@ def _subprocess_run(
         printable_cmd = printable_cmd.replace(value, "<redacted>")
 
     logger.debug("executing command: %s", printable_cmd)
-    proc = subprocess.run(
-        cmd,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        proc = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        stdout = (
+            error.stdout.decode("utf-8", errors="replace")
+            if isinstance(error.stdout, bytes)
+            else error.stdout or ""
+        )
+        stderr = (
+            error.stderr.decode("utf-8", errors="replace")
+            if isinstance(error.stderr, bytes)
+            else error.stderr or ""
+        )
+        for value in redact_values:
+            stdout = stdout.replace(value, "<redacted>")
+            stderr = stderr.replace(value, "<redacted>")
+
+        artifact_path.write_text(
+            f"cmd: {printable_cmd}\nerror: timed out after {timeout} seconds\n"
+            f"stdout:\n{stdout}\nstderr:\n{stderr}",
+            encoding="utf-8",
+        )
+        logger.error(
+            "command timed out after %s seconds: %s artifact=%s\nstdout:\n%s\nstderr:\n%s",
+            timeout,
+            printable_cmd,
+            artifact_path.as_posix(),
+            stdout,
+            stderr,
+        )
+        raise
+
     logger.debug(
         "executed command=%s rc=%d artifact=%s",
         printable_cmd,
@@ -576,6 +612,48 @@ def delete_after_tag():
     yield (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
 
 
+@pytest.fixture(scope="session")
+def source_install(tmp_path_factory) -> Tuple[bool, Optional[Path], str]:
+    """Snapshot checkout sources once per worker when testing source bits."""
+    mode = os.getenv("SELFTEST_INSTALL_FROM_SOURCE", "0")
+    if mode not in ("0", "1"):
+        raise ValueError("SELFTEST_INSTALL_FROM_SOURCE must be 0 or 1")
+    if mode == "0":
+        return False, None, ""
+
+    source = Path(__file__).resolve().parent.parent
+    version_header = source / "src/version.h"
+    if not version_header.is_file():
+        raise ValueError(
+            "Source-install mode requires src/version.h; configure the checkout "
+            "with cmake -S . -B build first"
+        )
+    match = re.search(
+        r'^#define\s+VERSION\s+"([^"\n]+)"\s*$',
+        version_header.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    if match is None or match.group(1) == "@VERSION@":
+        raise ValueError(f"Missing or malformed VERSION definition in {version_header}")
+    version = match.group(1)
+    archive = tmp_path_factory.mktemp("source-install") / "source.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        for name in (
+            "CMakeLists.txt",
+            "cmake",
+            "src",
+            "doc",
+            "ephemeral-disk-setup",
+            "initramfs",
+            "networkd",
+            "udev",
+            "selftest/selftest.py",
+            "selftest/install-from-source.sh",
+        ):
+            tar.add(source / name, arcname=name)
+    return True, archive, version
+
+
 @pytest.mark.parametrize(
     "sparse_data_disk_luns",
     [False, True],
@@ -604,6 +682,7 @@ class TestVMs:
         temp_vm_name,
         image,
         vm_size,
+        source_install,
     ):
         """Initialize the test."""
         self.admin_username = admin_username
@@ -616,6 +695,11 @@ class TestVMs:
         self.delete_after_tag = delete_after_tag
         self.hold_failures = hold_failures
         self.image = image
+        (
+            self.install_from_source,
+            self.install_from_source_archive,
+            self.install_from_source_version,
+        ) = source_install
         self.public_ip, self.public_ip_name = public_ip
         self.reallocates = reallocates
         self.reboots = reboots
@@ -649,6 +733,7 @@ class TestVMs:
             f"ip={self.public_ip}\n"
             f"image={self.image}\n"
             f"size={self.vm_size}\n"
+            f"install_from_source={self.install_from_source}\n"
             f"ssh_key_path={self.ssh_key_path.as_posix()}\n"
             f'ssh_cmd="{shlex.join(self.ssh_command)}"\n'
             f'console_cmd="az serial-console connect -n {self.vm_name} -g {self.temp_resource_group}"\n'
@@ -914,7 +999,12 @@ class TestVMs:
         (self.artifacts_path / "vm.cfg").write_text(self.vm_cfg)
 
     def _execute_ssh_command(
-        self, command: List[str], *, artifact_name: str, decode: bool = False
+        self,
+        command: List[str],
+        *,
+        artifact_name: str,
+        decode: bool = False,
+        timeout: Optional[float] = None,
     ) -> subprocess.CompletedProcess:
         """Execute a command on the VM with sudo."""
         proc = _subprocess_run(
@@ -922,6 +1012,7 @@ class TestVMs:
             artifacts_path=self.artifacts_path,
             artifact_name=artifact_name,
             decode=decode,
+            timeout=timeout,
         )
         return proc
 
@@ -975,14 +1066,95 @@ class TestVMs:
 
     def _run_selftest_script(self) -> None:
         """Run selftest script on the VM."""
+        script = (
+            "/usr/sbin/azure-vm-utils-selftest"
+            if self.install_from_source
+            else self.target_script_path
+        )
         proc = self._execute_ssh_command(
-            [self.target_script_path, "--debug"],
+            [script, "--debug"],
             artifact_name=f"{self.boot_id}-selftest",
         )
 
         if proc.returncode != 0:
             raise RuntimeError(
                 f"self-test failed on {self.boot_id} @ {self.artifacts_path.as_posix()}: {proc.stderr}"
+            )
+
+    def _install_from_source(self) -> None:
+        """Install from source and reboot before validation."""
+        if not self.install_from_source:
+            return
+
+        assert self.install_from_source_archive is not None
+        remote_archive = f"/home/{self.admin_username}/azure-vm-utils-source.tar.gz"
+
+        self._scp_to_vm(self.install_from_source_archive, remote_archive)
+        proc = self._execute_ssh_command(
+            ["mktemp", "-d", "/var/tmp/azure-vm-utils-selftest-XXXXXXXX"],
+            artifact_name="create-source-directory",
+        )
+        source_dir = proc.stdout.strip()
+        if proc.returncode != 0 or not source_dir:
+            raise RuntimeError(
+                f"failed to create source directory: {proc.stdout} {proc.stderr}"
+            )
+
+        proc = self._execute_ssh_command(
+            ["tar", "-xzf", remote_archive, "-C", source_dir],
+            artifact_name="extract-source",
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"failed to extract source archive: {proc.stdout} {proc.stderr}"
+            )
+
+        (self.artifacts_path / "source-install-version").write_text(
+            f"{self.install_from_source_version}\nsha256={hashlib.sha256(self.install_from_source_archive.read_bytes()).hexdigest()}\n",
+            encoding="utf-8",
+        )
+
+        proc = self._execute_ssh_command(
+            [
+                "sh",
+                "-x",
+                f"{source_dir}/selftest/install-from-source.sh",
+                source_dir,
+                self.install_from_source_version,
+            ],
+            artifact_name="install-from-source",
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"failed to install source bits (exit {proc.returncode}); "
+                f"log: {self.artifacts_path / 'install-from-source'}\n"
+                f"stdout:\n{proc.stdout[-4000:]}\nstderr:\n{proc.stderr[-4000:]}"
+            )
+
+        self._reboot_vm()
+
+    def _verify_source_install(self) -> None:
+        """Ensure the installed checkout files remain in use on every boot."""
+        if not self.install_from_source:
+            return
+        proc = self._execute_ssh_command(
+            ["sha256sum", "--check", "/var/tmp/azure-vm-utils-selftest.sha256"],
+            artifact_name=f"{self.boot_id}-source-install-checksums",
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"source-install checksum verification failed: {proc.stdout} {proc.stderr}"
+            )
+        proc = self._execute_ssh_command(
+            ["/usr/sbin/azure-nvme-id", "--version"],
+            artifact_name=f"{self.boot_id}-source-install-version",
+        )
+        if proc.returncode != 0 or proc.stdout.split() != [
+            "/usr/sbin/azure-nvme-id",
+            self.install_from_source_version,
+        ]:
+            raise RuntimeError(
+                f"unexpected source-install version: {proc.stdout} {proc.stderr}"
             )
 
     def _scp_from_vm(self, src: str, artifact_name: str) -> Path:
@@ -1110,10 +1282,69 @@ class TestVMs:
 
             raise RuntimeError(f"failed to start VM {self.vm_name}: {proc.stderr}")
 
-    def _reboot_vm(self) -> None:
-        """Reboot the VM."""
-        self._execute_ssh_command(["reboot"], artifact_name="reboot")
-        time.sleep(10)
+    def _reboot_vm(self, retry_wait: int = 10, retry_total_secs: int = 1200) -> None:
+        """Reboot the VM and verify it is ready on a different kernel boot."""
+        before = self._execute_ssh_command(
+            ["cat", "/proc/sys/kernel/random/boot_id"],
+            artifact_name=f"{self.boot_id}-reboot-id-before",
+            timeout=30,
+        )
+        before_id = before.stdout.strip()
+        if before.returncode != 0 or not before_id:
+            raise RuntimeError(f"failed to read boot ID before reboot: {before.stderr}")
+
+        try:
+            proc = self._execute_ssh_command(
+                ["reboot"], artifact_name=f"{self.boot_id}-reboot", timeout=30
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "reboot command timed out; verifying VM %s boot ID", self.vm_name
+            )
+        else:
+            # SSH can disconnect before reboot returns its exit status.
+            if proc.returncode not in (0, 255):
+                raise RuntimeError(f"failed to reboot VM {self.vm_name}: {proc.stderr}")
+
+        time.sleep(retry_wait)
+
+        deadline = time.monotonic() + retry_total_secs
+        while True:
+            remaining = deadline - time.monotonic()
+            try:
+                after = self._execute_ssh_command(
+                    ["cat", "/proc/sys/kernel/random/boot_id"],
+                    artifact_name=f"{self.boot_id}-reboot-id-after",
+                    timeout=min(30, remaining),
+                )
+            except subprocess.TimeoutExpired:
+                logger.debug("waiting for VM %s SSH after reboot", self.vm_name)
+            else:
+                after_id = after.stdout.strip()
+                if after.returncode == 0 and after_id and after_id != before_id:
+                    self._wait_for_vm()
+                    return
+                if after.returncode not in (0, 255):
+                    raise RuntimeError(
+                        f"failed to read boot ID after reboot: {after.stdout} {after.stderr}"
+                    )
+
+            remaining = deadline - time.monotonic()
+            if remaining < retry_wait:
+                break
+
+            logger.debug(
+                "waiting for VM %s boot ID to change, %d seconds until timeout",
+                self.vm_name,
+                remaining,
+            )
+            time.sleep(retry_wait)
+
+        raise RuntimeError(
+            f"reboot not verified for VM {self.vm_name}: "
+            f"boot ID did not change from {before.stdout.strip()} within "
+            f"{retry_total_secs} seconds"
+        )
 
     def _verify_image(self) -> None:
         """Verify the image has scrubbed conflicting configurations."""
@@ -1188,12 +1419,14 @@ class TestVMs:
                 self.target_script_path,
             )
             self._verify_image()
+            self._install_from_source()
 
             for self.alloc in range(0, self.reallocates + 1):
                 for self.boot in range(0, self.reboots + 1):
                     self._wait_for_vm()
                     self._fetch_boot_diagnostics()
                     self._fetch_logs()
+                    self._verify_source_install()
                     self._run_selftest_script()
 
                     # Check if we need to reboot or reallocate VM.
