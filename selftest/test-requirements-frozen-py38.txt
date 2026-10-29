@@ -20,7 +20,7 @@ platformdirs==4.3.6
 pluggy==1.5.0
 pycodestyle==2.12.1
 pyflakes==3.2.0
-pylint==3.2.7
+pylint==4.0.9
 pytest==8.3.5
 pytest-xdist==3.6.1
 requests==2.32.4
