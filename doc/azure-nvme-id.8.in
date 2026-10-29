@@ -1,4 +1,4 @@
-.TH "azure-nvme-id" "8" "October 23, 2026" "azure-nvme-id @VERSION@" "User Manual"
+.TH "azure-nvme-id" "8" "October\ 29,\ 2026" "azure-nvme-id @VERSION@" "User Manual"
 .hy
 .SH NAME
 .PP
@@ -21,6 +21,10 @@ Output options are plain or json.
 .PP
 JSON output includes \f[CB]path\f[R], \f[CB]nsid\f[R], \f[CB]model\f[R],
 \f[CB]properties\f[R], and \f[CB]vs\f[R] for each namespace.
+.PP
+Controllers whose model cannot be read from sysfs are skipped with a
+diagnostic on stderr.
+Other controllers are still processed.
 .PP
 To support udev rules, --udev option will invoke \f[B]azure-nvme-id\f[R]
 in udev mode.
