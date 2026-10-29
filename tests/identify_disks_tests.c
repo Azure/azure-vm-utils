@@ -634,6 +634,51 @@ static void test_identify_disks_nsid_failure_json(void **state)
     assert_string_equal(capture_stderr(), "failed to get namespace id: /dev/nvme0n1\n");
 }
 
+static void test_identify_disks_controller_failure(void **state)
+{
+    (void)state;
+
+    create_file(fake_sys_class_nvme_path, "nvme0/device/vendor", "0x1414");
+    create_dir(fake_sys_class_nvme_path, "nvme0/nvme0n1");
+    _setup_nvme1_microsoft_one_namespace();
+    create_file(fake_sys_class_nvme_path, "nvme2/device/vendor", "0x1414");
+    create_file(fake_sys_class_nvme_path, "nvme2/model", "");
+    create_dir(fake_sys_class_nvme_path, "nvme2/nvme2n1");
+    _setup_nvme6_remote_accelerator_v1_with_vs();
+
+    struct context ctx = {.output_format = PLAIN};
+    assert_int_equal(identify_disks(&ctx), 0);
+    assert_string_equal(capture_stderr(), "failed to initialize NVMe controller nvme0\n"
+                                          "failed to initialize NVMe controller nvme2\n");
+    assert_string_equal(capture_stdout(), "/dev/nvme1n1: key1=nvme1n1value1,key2=nvme1n1value2\n"
+                                          "/dev/nvme6n1: key1=nvme6n1value1,key2=nvme6n1value2\n");
+}
+
+static void test_identify_disks_controller_failure_json(void **state)
+{
+    (void)state;
+
+    create_file(fake_sys_class_nvme_path, "nvme0/device/vendor", "0x1414");
+    create_dir(fake_sys_class_nvme_path, "nvme0/nvme0n1");
+    _setup_nvme1_microsoft_one_namespace();
+    create_file(fake_sys_class_nvme_path, "nvme2/device/vendor", "0x1414");
+    create_file(fake_sys_class_nvme_path, "nvme2/model", "");
+    create_dir(fake_sys_class_nvme_path, "nvme2/nvme2n1");
+    _setup_nvme6_remote_accelerator_v1_with_vs();
+
+    struct context ctx = {.output_format = JSON};
+    assert_int_equal(identify_disks(&ctx), 0);
+    assert_string_equal(capture_stderr(), "failed to initialize NVMe controller nvme0\n"
+                                          "failed to initialize NVMe controller nvme2\n");
+    assert_true(compare_json_strings(capture_stdout(),
+                                     "[{\"path\":\"/dev/nvme1n1\",\"nsid\":1,\"model\":\"Unknown model\","
+                                     "\"properties\":{\"key1\":\"nvme1n1value1\",\"key2\":\"nvme1n1value2\"},"
+                                     "\"vs\":\"key1=nvme1n1value1,key2=nvme1n1value2\"},"
+                                     "{\"path\":\"/dev/nvme6n1\",\"nsid\":1,\"model\":\"MSFT NVMe Accelerator v1.0\","
+                                     "\"properties\":{\"key1\":\"nvme6n1value1\",\"key2\":\"nvme6n1value2\"},"
+                                     "\"vs\":\"key1=nvme6n1value1,key2=nvme6n1value2\"}]"));
+}
+
 int main(void)
 {
     const struct CMUnitTest tests[] = {
@@ -643,6 +688,8 @@ int main(void)
         cmocka_unit_test_setup_teardown(test_identify_disks, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_combined, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_combined_json, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_disks_controller_failure, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_disks_controller_failure_json, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_nonmatching_nsid, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_nonmatching_nsid_json, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_nsid_failure, setup, teardown),
