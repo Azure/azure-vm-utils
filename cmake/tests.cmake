@@ -35,7 +35,7 @@ add_test_executable(identify_disks_tests
 )
 
 add_test_executable(identify_udev_tests
-    WRAPPED_FUNCTIONS nvme_identify_namespace_vs_for_namespace_device
+    WRAPPED_FUNCTIONS nvme_identify_namespace_vs_for_namespace_device strdup
     SOURCES src/debug.c src/identify_udev.c src/nvme.c tests/identify_udev_tests.c
 )
 
