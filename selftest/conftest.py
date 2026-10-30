@@ -40,6 +40,10 @@ def pytest_configure(config):
     This is used to store logs and other artifacts generated during the test run.
     If running under pytest-xdist, use the worker ID to create separate logs for each worker.
     """
+    for image_type in ("arm64", "gen1", "gen2"):
+        config.addinivalue_line(
+            "markers", f"{image_type}: VM image architecture/generation"
+        )
     artifacts_path = os.getenv("SELFTEST_ARTIFACTS_PATH")
     if "PYTEST_XDIST_WORKER" not in os.environ:
         for name in (

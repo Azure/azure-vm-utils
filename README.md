@@ -85,6 +85,11 @@ execute with sudo.
 scp selfcheck/selftest.py $ip: && ssh $ip -- sudo ./selftest.py
 ```
 
+Selftest uses strict current-behavior checks by default. Use `--compat` to
+allow for features not present in older distro-packaged versions.
+Image tests enable compatibility for packaged utilities and keep strict
+checks when installing from source.
+
 ## updating requirements
 
 To refresh both frozen selftest dependency lists from
@@ -138,8 +143,8 @@ and NVMe. Test scope can be narrowed with `-k sparse-luns` or `-k contiguous-lun
 
 By default these tests validate the utilities already installed in each image.
 Use `SELFTEST_INSTALL_FROM_SOURCE=1` to instead build and install from source
-matching the current working tree. Source-install mode rebuilds the running
-kernel's initramfs and performs a mandatory reboot before the first selftest.
+matching the current working tree. Source-install mode rebuilds initramfs for
+all installed kernels and performs a mandatory reboot before the first selftest.
 
 Supported environment variables:
 
@@ -148,10 +153,12 @@ Supported environment variables:
 - SELFTEST_ARTIFACTS_PATH: directory path to store artifacts under
 - SELFTEST_AZURE_LOCATION: location to use
 - SELFTEST_AZURE_SUBSCRIPTION: subscription to use
+- SELFTEST_FULL_MATRIX: `1` for every selected image/SKU combination (default=`0`)
 - SELFTEST_HOLD_FAILURES: skip cleanup for failures
+- SELFTEST_INSTALL_FROM_SOURCE: `1` to install from working tree source
+- SELFTEST_PUBLIC_IP_TAGS: optional public-IP usage tags
 - SELFTEST_REBOOTS: number of reboots to perform in test (default=50)
 - SELFTEST_RESOURCE_GROUP: optional RG to use, otherwise one is created
-- SELFTEST_INSTALL_FROM_SOURCE: `1` to install from working tree source
 
 # Contributing
 

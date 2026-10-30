@@ -7,7 +7,9 @@
 
 """Azure VM utilities self-tests script."""
 
+import base64
 import codecs
+import fcntl
 import getpass
 import hashlib
 import json
@@ -21,7 +23,9 @@ import tempfile
 import time
 import traceback
 import uuid
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -42,63 +46,228 @@ logger = logging.getLogger(__name__)
 # pylint: disable=attribute-defined-outside-init
 # pylint: disable=redefined-outer-name
 
-ARM64_IMAGES = [
-    image for image in os.getenv("SELFTEST_ARM64_IMAGES", "").split(",") if image
+
+class ImageType(str, Enum):
+    """Supported image architectures and VM generations."""
+
+    ARM64 = "ARM64"
+    GEN1 = "GEN1"
+    GEN2 = "GEN2"
+
+
+SSH_OPTIONS = [
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "ServerAliveInterval=10",
+    "-o",
+    "ServerAliveCountMax=3",
 ]
-if not ARM64_IMAGES:
-    ARM64_IMAGES = [
-        "debian:debian-13-daily:13-arm64:latest",
+
+
+@dataclass(frozen=True)
+class ImageConfig:
+    """Image identity, observed utilities version, and optional provisioning settings."""
+
+    urn: str
+    image_type: ImageType
+    azure_vm_utils_version: Optional[str] = None
+    test_all_skus: bool = False
+    # https://github.com/util-linux/util-linux/issues/4527
+    workaround_util_linux_bug: bool = False
+
+
+IMAGES = [
+    ImageConfig(
+        "canonical:ubuntu-24_04-lts:server-arm64:latest",
+        ImageType.ARM64,
+        "0.6.0-4~ubuntu0.24.04.1",
+        test_all_skus=True,
+    ),
+    ImageConfig(
+        "canonical:ubuntu-26_04-lts:server-arm64:latest",
+        ImageType.ARM64,
+        "0.6.0-4build1",
+    ),
+    ImageConfig(
+        "canonical:ubuntu-24_04-lts:server-gen1:latest",
+        ImageType.GEN1,
+        "0.6.0-4~ubuntu0.24.04.1",
+    ),
+    ImageConfig(
+        "canonical:ubuntu-26_04-lts:server-gen1:latest", ImageType.GEN1, "0.6.0-4build1"
+    ),
+    ImageConfig("canonical:ubuntu-24_04-lts:server:latest", ImageType.GEN2),
+    ImageConfig("canonical:ubuntu-26_04-lts:server:latest", ImageType.GEN2),
+    ImageConfig("debian:debian-13-daily:13-arm64:latest", ImageType.ARM64, "0.6.0-2"),
+    ImageConfig(
+        "debian:debian-14-daily:14-arm64:latest",
+        ImageType.ARM64,
+        "0.6.0-4+b1",
+        workaround_util_linux_bug=True,
+    ),
+    ImageConfig(
         "debian:debian-sid-daily:sid-arm64:latest",
+        ImageType.ARM64,
+        "0.6.0-4+b1",
+        workaround_util_linux_bug=True,
+    ),
+    ImageConfig("debian:debian-13-daily:13:latest", ImageType.GEN1, "0.6.0-2"),
+    ImageConfig("debian:debian-14-daily:14:latest", ImageType.GEN1, "0.6.0-4"),
+    ImageConfig("debian:debian-sid-daily:sid:latest", ImageType.GEN1, "0.6.0-4"),
+    ImageConfig("debian:debian-13-daily:13-gen2:latest", ImageType.GEN2),
+    ImageConfig("debian:debian-14-daily:14-gen2:latest", ImageType.GEN2),
+    ImageConfig("debian:debian-sid-daily:sid-gen2:latest", ImageType.GEN2),
+    ImageConfig(
         "/CommunityGalleries/Fedora-5e266ba4-2250-406d-adad-5d73860d958f/Images/Fedora-Cloud-Rawhide-Arm64/versions/latest",
-    ]
-ARM64_VM_SIZES = [
-    vm_size
-    for vm_size in os.getenv("SELFTEST_ARM64_VM_SIZES", "").split(",")
-    if vm_size
-]
-if not ARM64_VM_SIZES:
-    ARM64_VM_SIZES = [
-        sku.vm_size
-        for sku in selftest.SKU_CONFIGS.values()
-        if sku.vm_size_type == "arm64"
-    ]
-
-GEN1_IMAGES = [
-    image for image in os.getenv("SELFTEST_GEN1_IMAGES", "").split(",") if image
-]
-if not GEN1_IMAGES:
-    GEN1_IMAGES = [
-        "debian:debian-13-daily:13:latest",
-        "debian:debian-sid-daily:sid:latest",
-    ]
-GEN1_VM_SIZES = [
-    vm_size for vm_size in os.getenv("SELFTEST_GEN1_VM_SIZES", "").split(",") if vm_size
-]
-if not GEN1_VM_SIZES:
-    GEN1_VM_SIZES = [
-        sku.vm_size
-        for sku in selftest.SKU_CONFIGS.values()
-        if sku.vm_size_type == "x64" and not sku.nvme_only
-    ]
-
-GEN2_IMAGES = [
-    image for image in os.getenv("SELFTEST_GEN2_IMAGES", "").split(",") if image
-]
-if not GEN2_IMAGES:
-    GEN2_IMAGES = [
-        "debian:debian-13-daily:13-gen2:latest",
-        "debian:debian-sid-daily:sid-gen2:latest",
+        ImageType.ARM64,
+        "0.7.0-4.fc45",
+    ),
+    ImageConfig(
         "/CommunityGalleries/Fedora-5e266ba4-2250-406d-adad-5d73860d958f/Images/Fedora-Cloud-Rawhide-x64/versions/latest",
-    ]
-GEN2_VM_SIZES = [
-    vm_size for vm_size in os.getenv("SELFTEST_GEN2_VM_SIZES", "").split(",") if vm_size
+        ImageType.GEN2,
+    ),
+    ImageConfig(
+        "microsoftazurelinux:azurelinux-4:4-arm64:latest",
+        ImageType.ARM64,
+        "0.7.0-4.azl4",
+    ),
+    ImageConfig("microsoftazurelinux:azurelinux-4:4:latest", ImageType.GEN2),
+    ImageConfig("redhat:rhel-arm64:10_2-arm64:latest", ImageType.ARM64, "0.7.0-1.el10"),
+    ImageConfig("redhat:rhel:10_2:latest", ImageType.GEN1, "0.7.0-1.el10"),
+    ImageConfig("redhat:rhel:10_2-gen2:latest", ImageType.GEN2, test_all_skus=True),
+    ImageConfig(
+        "suse:sles-15-sp7-arm64:gen2:latest", ImageType.ARM64, "0.7.0-150500.11.6.1"
+    ),
+    ImageConfig(
+        "suse:sles-16-0-arm64:gen2:latest", ImageType.ARM64, "0.7.0-160000.1.1"
+    ),
+    ImageConfig(
+        "suse:sles-15-sp7:gen1:latest",
+        ImageType.GEN1,
+        "0.7.0-150500.11.6.1",
+        test_all_skus=True,
+    ),
+    ImageConfig(
+        "suse:sles-16-0-x86-64:gen1:latest", ImageType.GEN1, "0.7.0-160000.1.1"
+    ),
+    ImageConfig("suse:sles-15-sp7:gen2:latest", ImageType.GEN2),
+    ImageConfig("suse:sles-16-0-x86-64:gen2:latest", ImageType.GEN2),
 ]
-if not GEN2_VM_SIZES:
-    GEN2_VM_SIZES = [
+
+IMAGE_COVERAGE_VM_SIZES: Dict[ImageType, Tuple[str, str]] = {
+    ImageType.ARM64: ("Standard_D2plds_v5", "Standard_D2plds_v6"),
+    ImageType.GEN1: ("Standard_D2ds_v4", "Standard_L8s_v3"),
+    ImageType.GEN2: ("Standard_D2ds_v4", "Standard_D2ds_v6"),
+}
+
+
+def _get_overrides(variable: str) -> List[str]:
+    """Read nonempty entries from a comma-separated selection override."""
+    return [value for value in os.getenv(variable, "").split(",") if value]
+
+
+def _get_images(image_type: ImageType) -> List[ImageConfig]:
+    """Select a type from the shared catalog, honoring explicit overrides."""
+    overrides = _get_overrides(f"SELFTEST_{image_type.value}_IMAGES")
+    if overrides:
+        catalog = {
+            image.urn: image for image in IMAGES if image.image_type == image_type
+        }
+        return [
+            catalog.get(image, ImageConfig(image, image_type)) for image in overrides
+        ]
+    return [image for image in IMAGES if image.image_type == image_type]
+
+
+def _get_vm_sizes(image_type: ImageType) -> List[str]:
+    """Select compatible VM sizes, honoring explicit overrides."""
+    overrides = _get_overrides(f"SELFTEST_{image_type.value}_VM_SIZES")
+    if overrides:
+        return overrides
+    architecture = "arm64" if image_type == ImageType.ARM64 else "x64"
+    return [
         sku.vm_size
         for sku in selftest.SKU_CONFIGS.values()
-        if sku.vm_size_type == "x64"
+        if sku.vm_size_type == architecture
+        and (image_type != ImageType.GEN1 or not sku.nvme_only)
     ]
+
+
+def _get_test_matrix(
+    image_type: ImageType,
+    images: List[ImageConfig],
+    vm_sizes: List[str],
+    *,
+    full_matrix: bool = False,
+) -> List[Tuple[str, ImageConfig]]:
+    """Build image coverage and remaining SKU coverage independently."""
+    if full_matrix:
+        return list(
+            dict.fromkeys((size, image) for size in vm_sizes for image in images)
+        )
+    image_sizes = IMAGE_COVERAGE_VM_SIZES[image_type]
+    image_cases = [
+        (size, image) for size in vm_sizes if size in image_sizes for image in images
+    ]
+    sku_cases = [
+        (size, image)
+        for size in vm_sizes
+        if size not in image_sizes
+        for image in images
+        if image.test_all_skus
+    ]
+    cases = list(dict.fromkeys(image_cases + sku_cases))
+    if not cases:
+        raise ValueError(
+            f"No {image_type.value} cases selected: include an image-coverage SKU or an image with "
+            "test_all_skus=True, or set SELFTEST_FULL_MATRIX=1 for custom combinations"
+        )
+    return cases
+
+
+def _image_case_id(size: str, image: ImageConfig) -> str:
+    """Expose coverage tier and disk capabilities directly to pytest -k."""
+    tier = (
+        "image-coverage"
+        if size in IMAGE_COVERAGE_VM_SIZES[image.image_type]
+        else "sku-coverage"
+    )
+    sku = selftest.SKU_CONFIGS.get(size)
+    if sku is None:
+        storage = "unknown-storage"
+    elif sku.nvme_only:
+        storage = "nvme"
+    elif sku.nvme_local_disk_count:
+        storage = "scsi-and-local-nvme"
+    else:
+        storage = "scsi"
+    return f"type_{image.image_type.value}-{tier}-{storage}-{size}-{image.urn}"
+
+
+def _get_image_test_cases():
+    """Read selection settings once and attach readable IDs and type markers."""
+    mode = os.getenv("SELFTEST_FULL_MATRIX", "0")
+    if mode not in ("0", "1"):
+        raise ValueError("SELFTEST_FULL_MATRIX must be 0 or 1")
+    cases = []
+    for image_type in IMAGE_COVERAGE_VM_SIZES:
+        images = _get_images(image_type)
+        sizes = _get_vm_sizes(image_type)
+        for size, image in _get_test_matrix(
+            image_type, images, sizes, full_matrix=mode == "1"
+        ):
+            cases.append(
+                pytest.param(
+                    size,
+                    image,
+                    id=_image_case_id(size, image),
+                    marks=getattr(pytest.mark, image_type.value.lower()),
+                )
+            )
+    return cases
 
 
 def safe_parse_bytes_literal(s: str) -> str:
@@ -220,7 +389,12 @@ def artifacts_path(tmp_path, vm_size, image, temp_vm_name):
     if artifacts_path:
         tmp_path = Path(artifacts_path)
 
-    path = tmp_path / vm_size / image.replace("/", "_").replace(":", "_") / temp_vm_name
+    path = (
+        tmp_path
+        / vm_size
+        / image.urn.replace("/", "_").replace(":", "_")
+        / temp_vm_name
+    )
     path.mkdir(exist_ok=True, parents=True)
     yield path
 
@@ -327,35 +501,158 @@ def temp_resource_group(
     artifacts_path,
 ):
     """Create a temporary resource group for the test."""
-    create_rg = True
     env_rg = os.getenv("SELFTEST_RESOURCE_GROUP")
     if env_rg:
         resource_group_name = env_rg
-        proc = _subprocess_run(
-            [
-                "az",
-                "group",
-                "show",
-                "--subscription",
-                azure_subscription,
-                "--name",
-                resource_group_name,
-            ],
-            artifact_name="az_group_show",
-            artifacts_path=artifacts_path,
+        group_key = hashlib.sha256(
+            f"{azure_subscription}/{resource_group_name}".encode("utf-8")
+        ).hexdigest()
+        lock_path = (
+            Path(os.environ["SELFTEST_ARTIFACTS_PATH"])
+            / f"resource-group-{group_key}.lock"
         )
-
-        if proc.returncode == 0:
-            create_rg = False
+        with lock_path.open("a+", encoding="utf-8") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            lock.seek(0)
+            if not lock.read():
+                _ensure_resource_group(
+                    azure_subscription,
+                    azure_location,
+                    resource_group_name,
+                    delete_after_tag,
+                    artifacts_path,
+                )
+                lock.write("ready\n")
+                lock.flush()
     else:
         user = getpass.getuser()
         resource_group_name = f"temp-rg-{user}-selftest-{random_suffix}"
+        _ensure_resource_group(
+            azure_subscription,
+            azure_location,
+            resource_group_name,
+            delete_after_tag,
+            artifacts_path,
+        )
+
+    yield resource_group_name
+
+    if not env_rg and is_cleanup_permitted(request, hold_failures):
+        _subprocess_run(
+            [
+                "az",
+                "group",
+                "delete",
+                "--name",
+                resource_group_name,
+                "--yes",
+                "--no-wait",
+            ],
+            artifact_name="az_group_delete",
+            artifacts_path=artifacts_path,
+            check=True,
+        )
+
+
+def _run_network_command(
+    command: List[str],
+    *,
+    artifact_name: str,
+    artifacts_path: Path,
+    check: bool = True,
+) -> subprocess.CompletedProcess:
+    """Retry only Azure's transient network control-plane errors."""
+    for attempt in range(1, 6):
+        proc = _subprocess_run(
+            command,
+            artifact_name=(
+                artifact_name if attempt == 1 else f"{artifact_name}-attempt{attempt}"
+            ),
+            artifacts_path=artifacts_path,
+        )
+        if proc.returncode == 0:
+            return proc
+        if (
+            not any(
+                code in proc.stderr
+                for code in (
+                    "RetryableError",
+                    "AnotherOperationInProgress",
+                    "ConflictingConcurrentWriteNotAllowed",
+                    "CanceledAndSupersededDueToAnotherOperation",
+                )
+            )
+            or attempt == 5
+        ):
+            break
+        logger.warning(
+            "Transient Azure network error for %s; retrying in 2 seconds (%s/5)",
+            artifact_name,
+            attempt + 1,
+        )
+        time.sleep(2)
+    if check:
+        raise RuntimeError(
+            f"Azure network command failed: {shlex.join(command)}\n"
+            f"stdout={proc.stdout}\nstderr={proc.stderr}"
+        )
+    return proc
+
+
+def _get_network_resource(
+    command: List[str], *, artifact_name: str, artifacts_path: Path
+) -> Optional[Dict[str, Any]]:
+    """Distinguish a missing network resource from other inspection failures."""
+    proc = _run_network_command(
+        [*command, "--output", "json"],
+        artifact_name=artifact_name,
+        artifacts_path=artifacts_path,
+        check=False,
+    )
+    if proc.returncode == 0:
+        resource = json.loads(proc.stdout)
+        if not isinstance(resource, dict):
+            raise RuntimeError(f"Unexpected network resource response: {proc.stdout}")
+        return resource
+    if any(
+        code in proc.stderr
+        for code in ("ResourceNotFound", "ParentResourceNotFound", "Code: NotFound")
+    ):
+        return None
+    raise RuntimeError(f"Failed to inspect {artifact_name}: {proc.stderr}")
+
+
+def _ensure_resource_group(
+    azure_subscription,
+    azure_location,
+    resource_group_name,
+    delete_after_tag,
+    artifacts_path,
+):
+    """Create missing group infrastructure, including in an existing shared group."""
+    proc = _subprocess_run(
+        [
+            "az",
+            "group",
+            "show",
+            "--subscription",
+            azure_subscription,
+            "--name",
+            resource_group_name,
+        ],
+        artifact_name="az_group_show",
+        artifacts_path=artifacts_path,
+    )
+    if proc.returncode != 0 and "ResourceGroupNotFound" not in proc.stderr:
+        raise RuntimeError(
+            f"Failed to inspect resource group {resource_group_name}: stdout={proc.stdout} stderr={proc.stderr}"
+        )
 
     nsg_name = f"{resource_group_name}-nsg"
     subnet_name = f"{resource_group_name}-subnet"
     vnet_name = f"{resource_group_name}-vnet"
 
-    if create_rg:
+    if proc.returncode != 0:
         _subprocess_run(
             [
                 "az",
@@ -376,46 +673,115 @@ def temp_resource_group(
         )
         logger.info("created resource group: %s", resource_group_name)
 
-        proc = _subprocess_run(
+    group_existed = proc.returncode == 0
+    network_args = [
+        "--subscription",
+        azure_subscription,
+        "--resource-group",
+        resource_group_name,
+    ]
+    network = (
+        _get_network_resource(
+            [
+                "az",
+                "network",
+                "vnet",
+                "subnet",
+                "show",
+                *network_args,
+                "--vnet-name",
+                vnet_name,
+                "--name",
+                subnet_name,
+            ],
+            artifact_name="az_network_vnet_subnet_show",
+            artifacts_path=artifacts_path,
+        )
+        if group_existed
+        else None
+    )
+    ssh_rule = (
+        _get_network_resource(
             [
                 "az",
                 "network",
                 "nsg",
-                "create",
-                "--subscription",
-                azure_subscription,
-                "--resource-group",
-                resource_group_name,
-                "--location",
-                azure_location,
-                "--name",
+                "rule",
+                "show",
+                *network_args,
+                "--nsg-name",
                 nsg_name,
+                "--name",
+                "DefaultAllowSSH",
             ],
-            artifact_name="az_network_nsg_create",
+            artifact_name="az_network_nsg_rule_ssh_show",
             artifacts_path=artifacts_path,
-            check=False,
         )
-        if (
-            proc.returncode != 0
-            and "CanceledAndSupersededDueToAnotherOperation" not in proc.stderr
-        ):
-            raise RuntimeError(
-                f"Failed to create NSG {nsg_name} in resource group {resource_group_name}: stdout={proc.stdout} stderr={proc.stderr}"
+        if group_existed
+        else None
+    )
+    expected_nsg = (
+        f"/subscriptions/{azure_subscription}/resourceGroups/{resource_group_name}"
+        f"/providers/Microsoft.Network/networkSecurityGroups/{nsg_name}"
+    )
+    subnet_ready = (
+        network is not None
+        and network.get("provisioningState") == "Succeeded"
+        and (network.get("networkSecurityGroup") or {}).get("id", "").casefold()
+        == expected_nsg.casefold()
+        and network.get("defaultOutboundAccess") is False
+    )
+    ssh_ready = ssh_rule is not None and all(
+        ssh_rule.get(key) == value
+        for key, value in {
+            "provisioningState": "Succeeded",
+            "access": "Allow",
+            "direction": "Inbound",
+            "protocol": "Tcp",
+            "destinationPortRange": "22",
+            "priority": 1000,
+            "sourceAddressPrefix": "*",
+            "sourcePortRange": "*",
+            "destinationAddressPrefix": "*",
+        }.items()
+    )
+    if not subnet_ready and ssh_rule is None:
+        nsg = (
+            _get_network_resource(
+                ["az", "network", "nsg", "show", *network_args, "--name", nsg_name],
+                artifact_name="az_network_nsg_show",
+                artifacts_path=artifacts_path,
+            )
+            if group_existed
+            else None
+        )
+        if nsg is None:
+            _run_network_command(
+                [
+                    "az",
+                    "network",
+                    "nsg",
+                    "create",
+                    *network_args,
+                    "--location",
+                    azure_location,
+                    "--name",
+                    nsg_name,
+                ],
+                artifact_name="az_network_nsg_create",
+                artifacts_path=artifacts_path,
+                check=True,
             )
 
-        logger.info("created nsg: %s", proc.stdout.strip())
-
-        proc = _subprocess_run(
+    if not ssh_ready:
+        _run_network_command(
             [
                 "az",
                 "network",
                 "nsg",
                 "rule",
                 "create",
-                "--subscription",
-                azure_subscription,
-                "--resource-group",
-                resource_group_name,
+                *network_args,
                 "--nsg-name",
                 nsg_name,
                 "--name",
@@ -431,28 +797,30 @@ def temp_resource_group(
             ],
             artifact_name="az_network_nsg_rule_ssh_create",
             artifacts_path=artifacts_path,
-            check=False,
+            check=True,
         )
-        if (
-            proc.returncode != 0
-            and "CanceledAndSupersededDueToAnotherOperation" not in proc.stderr
-        ):
-            raise RuntimeError(
-                f"Failed to create NSG rule DefaultAllowSSH in resource group {resource_group_name}: stdout={proc.stdout} stderr={proc.stderr}"
-            )
 
-        logger.info("created nsg rule: %s", proc.stdout.strip())
+    if subnet_ready:
+        logger.info("reusing ready network in %s", resource_group_name)
+        return
 
-        proc = _subprocess_run(
+    vnet = (
+        _get_network_resource(
+            ["az", "network", "vnet", "show", *network_args, "--name", vnet_name],
+            artifact_name="az_network_vnet_show",
+            artifacts_path=artifacts_path,
+        )
+        if group_existed
+        else None
+    )
+    if vnet is None:
+        _run_network_command(
             [
                 "az",
                 "network",
                 "vnet",
                 "create",
-                "--subscription",
-                azure_subscription,
-                "--resource-group",
-                resource_group_name,
+                *network_args,
                 "--location",
                 azure_location,
                 "--name",
@@ -464,53 +832,34 @@ def temp_resource_group(
             artifacts_path=artifacts_path,
             check=True,
         )
-        logger.info("created vnet: %s", proc.stdout.strip())
 
-        proc = _subprocess_run(
-            [
-                "az",
-                "network",
-                "vnet",
-                "subnet",
-                "create",
-                "--subscription",
-                azure_subscription,
-                "--resource-group",
-                resource_group_name,
-                "--vnet-name",
-                vnet_name,
-                "--name",
-                subnet_name,
-                "--address-prefix",
-                "10.0.1.0/24",
-                "--network-security-group",
-                nsg_name,
-                "--default-outbound-access",
-                "false",
-            ],
-            artifact_name="az_network_vnet_subnet_create",
-            artifacts_path=artifacts_path,
-            check=True,
-        )
-        logger.info("created subnet: %s", proc.stdout.strip())
-
-    yield resource_group_name
-
-    if not env_rg and is_cleanup_permitted(request, hold_failures):
-        _subprocess_run(
-            [
-                "az",
-                "group",
-                "delete",
-                "--name",
-                resource_group_name,
-                "--yes",
-                "--no-wait",
-            ],
-            artifact_name="az_group_delete",
-            artifacts_path=artifacts_path,
-            check=True,
-        )
+    proc = _run_network_command(
+        [
+            "az",
+            "network",
+            "vnet",
+            "subnet",
+            "create",
+            "--subscription",
+            azure_subscription,
+            "--resource-group",
+            resource_group_name,
+            "--vnet-name",
+            vnet_name,
+            "--name",
+            subnet_name,
+            "--address-prefix",
+            "10.0.1.0/24",
+            "--network-security-group",
+            nsg_name,
+            "--default-outbound-access",
+            "false",
+        ],
+        artifact_name="az_network_vnet_subnet_create",
+        artifacts_path=artifacts_path,
+        check=True,
+    )
+    logger.info("created subnet: %s", proc.stdout.strip())
 
 
 @pytest.fixture
@@ -553,7 +902,7 @@ def public_ip(
         if ip_tags:
             public_ip_create_cmd += ["--ip-tags", ip_tags]
 
-        proc = _subprocess_run(
+        proc = _run_network_command(
             public_ip_create_cmd,
             artifact_name="az_public_ip_create",
             artifacts_path=artifacts_path,
@@ -574,18 +923,6 @@ def public_ip(
             "--name",
             ip_name,
         ]
-
-        # Temporary workaround for VPN-unroutable networks.
-        if any(
-            public_ip.startswith(prefix) for prefix in ("20.242", "68.154.", "128.24.")
-        ):
-            _subprocess_run(
-                delete_cmd,
-                check=True,
-                artifacts_path=artifacts_path,
-                artifact_name="az_public_ip_delete",
-            )
-            continue
 
         yield public_ip, ip_name
 
@@ -694,7 +1031,8 @@ class TestVMs:
         self.boot = 0
         self.delete_after_tag = delete_after_tag
         self.hold_failures = hold_failures
-        self.image = image
+        self.image_config = image
+        self.image = image.urn
         (
             self.install_from_source,
             self.install_from_source_archive,
@@ -723,6 +1061,7 @@ class TestVMs:
             self.ssh_key_path.as_posix(),
             "-o",
             "StrictHostKeyChecking=no",
+            *SSH_OPTIONS,
             f"{self.admin_username}@{self.public_ip}",
             "--",
             "sudo",
@@ -821,6 +1160,45 @@ class TestVMs:
 
     def _build_vm_template(self, image_reference: Dict[str, str]) -> Dict[str, Any]:
         """Create the NIC and all VM disks in a single ARM deployment."""
+        os_profile: Dict[str, Any] = {
+            "computerName": self.vm_name,
+            "adminUsername": self.admin_username,
+            "linuxConfiguration": {
+                "disablePasswordAuthentication": not bool(self.admin_password),
+                "ssh": {
+                    "publicKeys": [
+                        {
+                            "path": f"/home/{self.admin_username}/.ssh/authorized_keys",
+                            "keyData": Path(f"{self.ssh_key_path}.pub")
+                            .read_text(encoding="utf-8")
+                            .strip(),
+                        }
+                    ]
+                },
+            },
+        }
+        if self.admin_password:
+            os_profile["adminPassword"] = "[parameters('adminPassword')]"
+        sku_config = selftest.SKU_CONFIGS.get(self.vm_size)
+        if (
+            self.image_config.workaround_util_linux_bug
+            and sku_config is not None
+            and not sku_config.nvme_only
+            and sku_config.temp_disk_size_gib > 0
+        ):
+            cloud_config = b"#cloud-config\nmounts:\n  - [ephemeral0, /mnt, ext4]\n"
+            os_profile["customData"] = base64.b64encode(cloud_config).decode("ascii")
+            logger.info(
+                "Applying util-linux mount workaround for %s",
+                self.image_config.urn,
+            )
+        elif self.image_config.workaround_util_linux_bug:
+            logger.info(
+                "Not applying util-linux mount workaround for %s: "
+                "no known SCSI resource disk on %s",
+                self.image_config.urn,
+                self.vm_size,
+            )
         return {
             "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
             "contentVersion": "1.0.0.0",
@@ -870,30 +1248,7 @@ class TestVMs:
                     ],
                     "properties": {
                         "hardwareProfile": {"vmSize": self.vm_size},
-                        "osProfile": {
-                            "computerName": self.vm_name,
-                            "adminUsername": self.admin_username,
-                            **(
-                                {"adminPassword": "[parameters('adminPassword')]"}
-                                if self.admin_password
-                                else {}
-                            ),
-                            "linuxConfiguration": {
-                                "disablePasswordAuthentication": not bool(
-                                    self.admin_password
-                                ),
-                                "ssh": {
-                                    "publicKeys": [
-                                        {
-                                            "path": f"/home/{self.admin_username}/.ssh/authorized_keys",
-                                            "keyData": Path(f"{self.ssh_key_path}.pub")
-                                            .read_text(encoding="utf-8")
-                                            .strip(),
-                                        }
-                                    ]
-                                },
-                            },
-                        },
+                        "osProfile": os_profile,
                         "storageProfile": {
                             "imageReference": image_reference,
                             "osDisk": {
@@ -1018,7 +1373,8 @@ class TestVMs:
 
     def _fetch_boot_diagnostics(self) -> None:
         """Fetch boot diagnostics logs."""
-        for _ in range(300):
+        deadline = time.monotonic() + 300
+        while time.monotonic() < deadline:
             proc = _subprocess_run(
                 [
                     "az",
@@ -1037,11 +1393,16 @@ class TestVMs:
                 artifacts_path=self.artifacts_path,
                 artifact_name=f"{self.boot_id}-console",
                 decode=True,
+                timeout=max(0.1, min(30, deadline - time.monotonic())),
             )
             if proc.returncode == 0 and "BlobNotFound" not in proc.stderr:
                 return
 
             time.sleep(1)
+
+        raise RuntimeError(
+            f"boot diagnostics unavailable for VM {self.vm_name} after five minutes"
+        )
 
     def _fetch_logs(self) -> None:
         """Fetch logs."""
@@ -1071,8 +1432,25 @@ class TestVMs:
             if self.install_from_source
             else self.target_script_path
         )
+        command = [script, "--debug"]
+
+        if not self.install_from_source:
+            command = [
+                "sh",
+                "-c",
+                shlex.quote(
+                    "for python in python3 python3.11; do "
+                    'if "$python" -c "from dataclasses import dataclass; from typing import Literal" 2>/dev/null; then '
+                    'exec "$python" "$@"; fi; done; '
+                    'echo "Selftest requires Python 3.8 or newer with dataclasses and typing.Literal" >&2; exit 1'
+                ),
+                "selftest",
+                script,
+                "--debug",
+                "--compat",
+            ]
         proc = self._execute_ssh_command(
-            [script, "--debug"],
+            command,
             artifact_name=f"{self.boot_id}-selftest",
         )
 
@@ -1180,6 +1558,7 @@ class TestVMs:
                 "scp",
                 "-i",
                 self.ssh_key_path.as_posix(),
+                *SSH_OPTIONS,
                 src_path,
                 dst,
             ],
@@ -1262,18 +1641,28 @@ class TestVMs:
                     self.vm_name,
                 ],
                 artifacts_path=self.artifacts_path,
-                artifact_name="az_vm_start",
+                artifact_name=(
+                    "az_vm_start"
+                    if retries_remaining == 5
+                    else f"az_vm_start-attempt{6 - retries_remaining}"
+                ),
             )
             if proc.returncode == 0:
                 return
 
-            # Sometimes the VM start fails with a Conflict error due to
-            # previous deallocate even though it technically finished.
-            # Retry if this happens.
-            if "Conflict" in proc.stderr and retries_remaining > 0:
+            transient_errors = (
+                "Conflict",
+                "InternalExecutionError",
+                "Temporary failure in name resolution",
+            )
+            if (
+                any(error in proc.stderr for error in transient_errors)
+                and retries_remaining > 0
+            ):
                 logger.warning(
-                    "start VM %s failed with Conflict, retrying... (%d attempts left)",
+                    "start VM %s failed transiently: %s; retrying (%d attempts left)",
                     self.vm_name,
+                    proc.stderr.strip(),
                     retries_remaining,
                 )
                 time.sleep(5)
@@ -1311,6 +1700,8 @@ class TestVMs:
         deadline = time.monotonic() + retry_total_secs
         while True:
             remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
             try:
                 after = self._execute_ssh_command(
                     ["cat", "/proc/sys/kernel/random/boot_id"],
@@ -1359,6 +1750,43 @@ class TestVMs:
             if proc.returncode == 0:
                 msg = f"config {config} found in {self.image}"
                 logger.error(msg)
+
+    def _inspect_image_utilities(self) -> None:
+        """Record what the image provides before installing any source bits."""
+        proc = self._execute_ssh_command(
+            ["sh", "-c", shlex.quote("command -v azure-nvme-id")],
+            artifact_name="image-azure-vm-utils-presence",
+        )
+        if proc.returncode not in (0, 1):
+            raise RuntimeError(
+                f"failed to check image utilities (exit {proc.returncode}): {proc.stderr}"
+            )
+        version = None
+        if proc.returncode == 0:
+            proc = self._execute_ssh_command(
+                ["azure-nvme-id", "--version"],
+                artifact_name="image-azure-vm-utils-version",
+            )
+            fields = proc.stdout.split()
+            if proc.returncode != 0 or len(fields) != 2:
+                raise RuntimeError(
+                    f"failed to read image utilities version (exit {proc.returncode}): "
+                    f"{proc.stdout} {proc.stderr}"
+                )
+            version = fields[1]
+        self.image_config = replace(
+            self.image_config,
+            azure_vm_utils_version=version,
+        )
+        (self.artifacts_path / "image-info.json").write_text(
+            json.dumps(asdict(self.image_config), indent=2) + "\n", encoding="utf-8"
+        )
+        logger.info("image utilities: %s", self.image_config)
+        if (
+            self.image_config.azure_vm_utils_version is None
+            and not self.install_from_source
+        ):
+            pytest.skip(f"azure-vm-utils is not installed in {self.image}")
 
     def _wait_for_vm(self) -> None:
         """Wait for the VM to be ready."""
@@ -1414,6 +1842,7 @@ class TestVMs:
             logger.debug("public IP: %s", self.public_ip)
             self._create_vm()
             self._wait_for_vm()
+            self._inspect_image_utilities()
             self._scp_to_vm(
                 self.selftest_script_path,
                 self.target_script_path,
@@ -1448,37 +1877,9 @@ class TestVMs:
             ) from error
 
     @pytest.mark.parametrize(
-        "image",
-        ARM64_IMAGES,
+        "vm_size,image",
+        _get_image_test_cases(),
     )
-    @pytest.mark.parametrize(
-        "vm_size",
-        ARM64_VM_SIZES,
-    )
-    def test_arm64(self, image, vm_size):
-        """Test arm64 images."""
-        self.run_test()
-
-    @pytest.mark.parametrize(
-        "image",
-        GEN1_IMAGES,
-    )
-    @pytest.mark.parametrize(
-        "vm_size",
-        GEN1_VM_SIZES,
-    )
-    def test_gen1_x64(self, image, vm_size):
-        """Test gen1 x64 images."""
-        self.run_test()
-
-    @pytest.mark.parametrize(
-        "image",
-        GEN2_IMAGES,
-    )
-    @pytest.mark.parametrize(
-        "vm_size",
-        GEN2_VM_SIZES,
-    )
-    def test_gen2_x64(self, image, vm_size):
-        """Test gen2 x64 images."""
+    def test_image(self, image, vm_size):
+        """Validate an image on its selected hardware configuration."""
         self.run_test()

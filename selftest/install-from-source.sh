@@ -9,6 +9,32 @@ source_dir=$1
 version=$2
 trap 'rm -rf "$source_dir"' EXIT
 
+zypper_with_retries()
+{
+    max_attempts=30
+    attempt=1
+    while :; do
+        if LC_ALL=C zypper --non-interactive "$@" > "$source_dir/zypper.log" 2>&1; then
+            cat "$source_dir/zypper.log"
+            return 0
+        else
+            status=$?
+        fi
+        cat "$source_dir/zypper.log"
+        if [ "$status" -ne 8 ] ||
+            ! grep -Eq "can't create transaction lock.*Resource temporarily unavailable" "$source_dir/zypper.log"; then
+            return "$status"
+        fi
+        if [ "$attempt" -ge "$max_attempts" ]; then
+            echo "RPM transaction lock remained busy after $attempt zypper attempts." >&2
+            return "$status"
+        fi
+        attempt=$((attempt + 1))
+        printf 'RPM transaction lock is busy; retrying zypper in 10 seconds (attempt %s/%s).\n' "$attempt" "$max_attempts" >&2
+        sleep 10
+    done
+}
+
 configure_selftest_python()
 {
     # SLES 15 keeps Python 3.6 as python3 and provides python3.11 alongside it.
@@ -33,8 +59,8 @@ if command -v apt-get >/dev/null 2>&1; then
     apt-get "$@" install -y --no-install-recommends \
         gcc libc6-dev make cmake pkg-config libjson-c-dev
 elif command -v zypper >/dev/null 2>&1; then
-    zypper --non-interactive refresh
-    zypper --non-interactive install --no-recommends \
+    zypper_with_retries refresh
+    zypper_with_retries install --no-recommends \
         gcc glibc-devel make cmake pkg-config libjson-c-devel
 elif command -v dnf >/dev/null 2>&1; then
     dnf -y --setopt=install_weak_deps=False install \
