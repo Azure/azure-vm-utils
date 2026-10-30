@@ -1,4 +1,4 @@
-.TH "azure-nvme-id" "8" "October\ 29,\ 2026" "azure-nvme-id @VERSION@" "User Manual"
+.TH "azure-nvme-id" "8" "October 30, 2026" "azure-nvme-id @VERSION@" "User Manual"
 .hy
 .SH NAME
 .PP
@@ -17,17 +17,49 @@ identification details with a comma-separated, key=value format.
 \f[B]azure-nvme-id\f[R] combines this metadata with the make and model
 of NVMe device namespaces to identify a device by type, name, index,
 etc.
+.PP
+Diagnostics, including underlying system errors, are written to stderr.
+.SH DEVICE ENUMERATION
+.PP
+Without \f[CB]--udev\f[R], \f[B]azure-nvme-id\f[R] enumerates Microsoft
+NVMe controllers under \f[CB]/sys/class/nvme\f[R] and identifies their
+namespaces.
 Output options are plain or json.
 .PP
 JSON output includes \f[CB]path\f[R], \f[CB]nsid\f[R], \f[CB]model\f[R],
 \f[CB]properties\f[R], and \f[CB]vs\f[R] for each namespace.
 .PP
-Controllers whose model cannot be read from sysfs are skipped with a
-diagnostic on stderr.
-Other controllers are still processed.
+These errors are reported to stderr but do not stop enumeration:
+.IP \[bu] 2
+Missing \f[CB]/sys/class/nvme\f[R] means no controllers.
+A missing controller directory means no namespaces for that controller.
+.IP \[bu] 2
+An unreadable \f[CB]device/vendor\f[R] or \f[CB]model\f[R] file, or an
+invalid vendor ID, skips the controller.
+.IP \[bu] 2
+A failed model reread during fallback identification leaves properties
+empty.
+.IP \[bu] 2
+\f[CB]lun\f[R] or \f[CB]index\f[R] values that cannot be converted to
+integers stay strings in JSON output.
 .PP
-To support udev rules, --udev option will invoke \f[B]azure-nvme-id\f[R]
-in udev mode.
+Exit status \f[CB]0\f[R] does not guarantee that every device was
+identified.
+.SH UDEV DEVICE IDENTIFICATION
+.PP
+The \f[CB]--udev\f[R] option identifies a single NVMe namespace device
+specified by the required \f[CB]DEVNAME\f[R] environment variable instead
+of enumerating controllers.
+It queries that device directly, without sysfs vendor filtering or
+model-based fallback identification.
+.PP
+Output is a set of \f[CB]<key>=<value>\f[R] variables for consumption by
+udev rules.
+\f[CB]AZURE_DISK_VS\f[R] contains the vendor-specific data.
+Each property in that data is also printed with its key converted to
+uppercase and prefixed with \f[CB]AZURE_DISK_\f[R], such as
+\f[CB]AZURE_DISK_TYPE\f[R], \f[CB]AZURE_DISK_INDEX\f[R], and
+\f[CB]AZURE_DISK_NAME\f[R].
 .SH OPTIONS
 .TP
 \f[CB]--debug\f[R]
@@ -40,12 +72,58 @@ Output format, default is plain.
 Show usage information and exit.
 .TP
 \f[CB]--udev\f[R]
-Run in udev mode, printing a set of \f[CB]<key>=<value>\f[R] variables
-consumed by udev rules.
-Requires DEVNAME to be set in environment.
+Run in udev mode.
+See UDEV DEVICE IDENTIFICATION.
 .TP
 \f[CB]--version\f[R]
 Show version information and exit.
+.SH EXIT STATUS
+.TP
+\f[CB]0\f[R]
+Success, including \f[CB]--help\f[R], \f[CB]--version\f[R], or finding no
+matching devices.
+.TP
+\f[CB]1\f[R]
+Invalid command-line arguments.
+.TP
+\f[CB]2\f[R]
+Failure to scan \f[CB]/sys/class/nvme\f[R], except for \f[CB]ENOENT\f[R],
+which is treated as success.
+.TP
+\f[CB]3\f[R]
+Failure to scan \f[CB]/sys/class/nvme/<controller>\f[R] for namespaces,
+except for \f[CB]ENOENT\f[R], which is treated as success.
+.TP
+\f[CB]4\f[R]
+Memory allocation failure in namespace identification, udev property
+processing, or JSON processing, including JSON construction and
+serialization.
+.TP
+\f[CB]5\f[R]
+Failure to open an NVMe namespace device, either to obtain its namespace
+ID or to execute Identify Namespace.
+.TP
+\f[CB]6\f[R]
+An ioctl error executing the NVMe Identify Namespace command.
+.TP
+\f[CB]7\f[R]
+The NVMe Identify Namespace command returned a nonzero NVMe completion
+status.
+The status is printed in hexadecimal on stderr; it is not used directly
+as the process exit status.
+.TP
+\f[CB]8\f[R]
+An ioctl error obtaining a namespace ID with \f[CB]NVME_IOCTL_ID\f[R].
+.TP
+\f[CB]9\f[R]
+Failure to obtain the page size with \f[CB]sysconf()\f[R] for Identify
+Namespace.
+.TP
+\f[CB]10\f[R]
+Malformed vendor-specific key-value properties in udev mode.
+.TP
+\f[CB]11\f[R]
+The \f[CB]DEVNAME\f[R] environment variable is not set in udev mode.
 .SH EXAMPLES
 .PP
 Identify NVMe namespaces:

@@ -46,6 +46,6 @@ add_test_executable(identify_udev_tests
 )
 
 add_test_executable(nvme_tests
-    WRAPPED_FUNCTIONS open open64 posix_memalign ioctl __ioctl_time64 close strndup
-    SOURCES src/nvme.c tests/nvme_tests.c
+    WRAPPED_FUNCTIONS open open64 posix_memalign ioctl __ioctl_time64 close strndup sysconf
+    SOURCES src/identify_disks.c src/identify_udev.c src/nvme.c tests/nvme_tests.c
 )

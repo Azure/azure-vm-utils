@@ -16,6 +16,7 @@
 // clang-format on
 
 #include "capture.h"
+#include "exit_code.h"
 #include "identify_disks.h"
 
 #define MICROSOFT_NVME_DIRECT_DISK_V1 "Microsoft NVMe Direct Disk              \n"
@@ -206,7 +207,7 @@ static void _setup_nvme4_non_microsoft(void)
 }
 
 /**
- * Setup nvme5: microsoft disk, empty vs for nsid=2, error on nsid=3.
+ * Setup nvme5: microsoft disk, empty vs for nsid=2.
  */
 static void _setup_nvme5_microsoft_mixed_namespaces(void)
 {
@@ -214,14 +215,12 @@ static void _setup_nvme5_microsoft_mixed_namespaces(void)
     create_file(fake_sys_class_nvme_path, "nvme5/model", "Unknown model");
     create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n1");
     create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n2");
-    create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n3");
     create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n4");
     create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n32");
     create_dir(fake_sys_class_nvme_path, "nvme5/nvme5n315");
 
     expect_namespace_vs("/dev/nvme5n1", 1, strdup("key1=nvme5n1value1,key2=nvme5n1value2"));
     expect_namespace_vs("/dev/nvme5n2", 2, strdup(""));
-    expect_namespace_vs("/dev/nvme5n3", 3, NULL);
     expect_namespace_vs("/dev/nvme5n4", 4, strdup("key1=nvme5n4value1,key2=nvme5n4value2"));
     expect_namespace_vs("/dev/nvme5n32", 32, strdup("key1=nvme5n32value1"));
     expect_namespace_vs("/dev/nvme5n315", 315, strdup("key1=nvme5n315value1"));
@@ -332,6 +331,82 @@ static void test_trim_trailing_whitespace(void **state)
     }
 }
 
+static void test_identify_namespace_without_vs_missing_model(void **state)
+{
+    (void)state;
+
+    char *result = identify_namespace_without_vs(fake_sys_class_nvme_path, 1);
+    assert_string_equal(result, "");
+    free(result);
+
+    char expected[MAX_PATH + 128];
+    snprintf(expected, sizeof(expected), "failed to open %s/model: %s\n", fake_sys_class_nvme_path, strerror(ENOENT));
+    assert_string_equal(capture_stderr(), expected);
+    assert_string_equal(capture_stdout(), "");
+}
+
+static void test_identify_namespace_without_vs_model_read_error(void **state)
+{
+    (void)state;
+
+    create_dir(fake_sys_class_nvme_path, "model");
+    char *result = identify_namespace_without_vs(fake_sys_class_nvme_path, 1);
+    assert_string_equal(result, "");
+    free(result);
+
+    char expected[MAX_PATH + 128];
+    snprintf(expected, sizeof(expected), "failed to read model name from %s/model: %s\n", fake_sys_class_nvme_path,
+             strerror(EISDIR));
+    assert_string_equal(capture_stderr(), expected);
+    assert_string_equal(capture_stdout(), "");
+}
+
+static void test_identify_namespace_without_vs_empty_model(void **state)
+{
+    (void)state;
+
+    create_file(fake_sys_class_nvme_path, "model", "");
+    char *result = identify_namespace_without_vs(fake_sys_class_nvme_path, 1);
+    assert_string_equal(result, "");
+    free(result);
+
+    char expected[MAX_PATH + 128];
+    snprintf(expected, sizeof(expected), "failed to read model name from %s/model: unexpected end of file\n",
+             fake_sys_class_nvme_path);
+    assert_string_equal(capture_stderr(), expected);
+    assert_string_equal(capture_stdout(), "");
+}
+
+static void test_identify_disks_vendor_failures(void **state)
+{
+    (void)state;
+
+    create_dir(fake_sys_class_nvme_path, "nvme0");
+    create_file(fake_sys_class_nvme_path, "nvme2/device/vendor", "invalid");
+    create_file(fake_sys_class_nvme_path, "nvme3/device/vendor", "");
+    create_dir(fake_sys_class_nvme_path, "nvme4/device/vendor");
+    _setup_nvme1_microsoft_one_namespace();
+
+    struct context ctx = {.output_format = PLAIN};
+    assert_int_equal(identify_disks(&ctx), EXIT_CODE_SUCCESS);
+    char expected[4 * MAX_PATH + 512];
+    snprintf(expected, sizeof(expected),
+             "failed to open %s/nvme0/device/vendor: %s\n"
+             "failed to parse vendor ID from %s/nvme2/device/vendor: expected a hexadecimal vendor ID\n"
+             "failed to parse vendor ID from %s/nvme3/device/vendor: expected a hexadecimal vendor ID\n"
+             "failed to read vendor ID from %s/nvme4/device/vendor: %s\n",
+             fake_sys_class_nvme_path, strerror(ENOENT), fake_sys_class_nvme_path, fake_sys_class_nvme_path,
+             fake_sys_class_nvme_path, strerror(EISDIR));
+    const char *stderr_output = capture_stderr();
+    /* scandir applies its filter before sorting, so diagnostic order is unspecified. */
+    char *saveptr;
+    for (char *line = strtok_r(expected, "\n", &saveptr); line != NULL; line = strtok_r(NULL, "\n", &saveptr))
+    {
+        assert_non_null(strstr(stderr_output, line));
+    }
+    assert_string_equal(capture_stdout(), "/dev/nvme1n1: key1=nvme1n1value1,key2=nvme1n1value2\n");
+}
+
 static void test_identify_disks_no_sys_class_nvme_present(void **state)
 {
     (void)state; // Unused parameter
@@ -344,7 +419,7 @@ static void test_identify_disks_no_sys_class_nvme_present(void **state)
     struct context ctx = {.output_format = PLAIN};
     int result = identify_disks(&ctx);
 
-    assert_int_equal(result, 0);
+    assert_int_equal(result, EXIT_CODE_SUCCESS);
     assert_string_equal(capture_stderr(), expected_string);
     assert_string_equal(capture_stdout(), "");
 }
@@ -356,7 +431,7 @@ static void test_identify_disks_sys_class_nvme_empty(void **state)
     struct context ctx = {.output_format = PLAIN};
     int result = identify_disks(&ctx);
 
-    assert_int_equal(result, 0);
+    assert_int_equal(result, EXIT_CODE_SUCCESS);
     assert_string_equal(capture_stderr(), "");
     assert_string_equal(capture_stdout(), "");
 }
@@ -366,7 +441,7 @@ static void test_identify_disks_sys_class_nvme_empty_json(void **state)
     (void)state;
 
     struct context ctx = {.output_format = JSON};
-    assert_int_equal(identify_disks(&ctx), 0);
+    assert_int_equal(identify_disks(&ctx), EXIT_CODE_SUCCESS);
     assert_string_equal(capture_stderr(), "");
     assert_true(compare_json_strings(capture_stdout(), "[]"));
 }
@@ -424,7 +499,7 @@ static void test_identify_disks(void **state)
         struct context ctx = {.output_format = PLAIN};
         int result = identify_disks(&ctx);
 
-        assert_int_equal(result, 0);
+        assert_int_equal(result, EXIT_CODE_SUCCESS);
         assert_string_equal(capture_stderr(), test_cases[i].expected_stderr);
         assert_string_equal(capture_stdout(), test_cases[i].expected_stdout);
     }
@@ -449,7 +524,7 @@ static void test_identify_disks_combined(void **state)
     struct context ctx = {.output_format = PLAIN};
     int result = identify_disks(&ctx);
 
-    assert_int_equal(result, 0);
+    assert_int_equal(result, EXIT_CODE_SUCCESS);
     assert_string_equal(capture_stderr(), "failed to parse vs=type=local,index=foo,lun=bar key=index value=foo as int\n"
                                           "failed to parse vs=type=local,index=foo,lun=bar key=lun value=bar as int\n");
     assert_string_equal(capture_stdout(), "/dev/nvme1n1: key1=nvme1n1value1,key2=nvme1n1value2\n"
@@ -480,7 +555,6 @@ static const char *expected_combined_json_string =
 "{\"path\":\"/dev/nvme2n2\",\"nsid\":2,\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme2n2value1\",\"key2\":\"nvme2n2value2\"},\"vs\":\"key1=nvme2n2value1,key2=nvme2n2value2\"},"
 "{\"path\":\"/dev/nvme5n1\",\"nsid\":1,\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n1value1\",\"key2\":\"nvme5n1value2\"},\"vs\":\"key1=nvme5n1value1,key2=nvme5n1value2\"},"
 "{\"path\":\"/dev/nvme5n2\",\"nsid\":2,\"model\":\"Unknown model\",\"properties\":{},\"vs\":\"\"},"
-"{\"path\":\"/dev/nvme5n3\",\"nsid\":3,\"model\":\"Unknown model\",\"properties\":{},\"vs\":null},"
 "{\"path\":\"/dev/nvme5n4\",\"nsid\":4,\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n4value1\",\"key2\":\"nvme5n4value2\"},\"vs\":\"key1=nvme5n4value1,key2=nvme5n4value2\"},"
 "{\"path\":\"/dev/nvme5n32\",\"nsid\":32,\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n32value1\"},\"vs\":\"key1=nvme5n32value1\"},"
 "{\"path\":\"/dev/nvme5n315\",\"nsid\":315,\"model\":\"Unknown model\",\"properties\":{\"key1\":\"nvme5n315value1\"},\"vs\":\"key1=nvme5n315value1\"},"
@@ -542,7 +616,7 @@ static void test_identify_disks_combined_json(void **state)
     struct context ctx = {.output_format = JSON};
     int result = identify_disks(&ctx);
 
-    assert_int_equal(result, 0);
+    assert_int_equal(result, EXIT_CODE_SUCCESS);
     assert_string_equal(capture_stderr(), "failed to parse vs=type=local,index=foo,lun=bar key=index value=foo as int\n"
                                           "failed to parse vs=type=local,index=foo,lun=bar key=lun value=bar as int\n");
 
@@ -579,7 +653,7 @@ static void test_identify_disks_nonmatching_nsid(void **state)
     }
 
     struct context ctx = {.output_format = PLAIN};
-    assert_int_equal(identify_disks(&ctx), 0);
+    assert_int_equal(identify_disks(&ctx), EXIT_CODE_SUCCESS);
     assert_string_equal(capture_stdout(), "/dev/nvme0n2: type=os\n"
                                           "/dev/nvme1n1: type=data,lun=3\n"
                                           "/dev/nvme1n2: type=data,lun=1\n"
@@ -598,53 +672,11 @@ static void test_identify_disks_nonmatching_nsid_json(void **state)
     expect_namespace_vs("/dev/nvme0n1", 9, strdup(""));
 
     struct context ctx = {.output_format = JSON};
-    assert_int_equal(identify_disks(&ctx), 0);
+    assert_int_equal(identify_disks(&ctx), EXIT_CODE_SUCCESS);
     assert_true(compare_json_strings(capture_stdout(),
                                      "[{\"path\":\"/dev/nvme0n1\",\"nsid\":9,\"model\":\"MSFT NVMe Accelerator v1.0\","
                                      "\"properties\":{\"type\":\"data\",\"lun\":7},\"vs\":\"\"}]"));
     assert_string_equal(capture_stderr(), "");
-}
-
-static void test_identify_disks_nsid_failure(void **state)
-{
-    (void)state;
-
-    create_file(fake_sys_class_nvme_path, "nvme0/device/vendor", "0x1414");
-    create_file(fake_sys_class_nvme_path, "nvme0/model", MSFT_NVME_ACCELERATOR_MODEL_V1);
-    create_dir(fake_sys_class_nvme_path, "nvme0/nvme0n1");
-    create_dir(fake_sys_class_nvme_path, "nvme0/nvme0n2");
-
-    expect_string(__wrap_get_nsid_from_namespace_device_path, namespace_path, "/dev/nvme0n1");
-    will_return(__wrap_get_nsid_from_namespace_device_path, -1);
-    expect_namespace_vs("/dev/nvme0n2", 9, strdup(""));
-
-    struct context ctx = {.output_format = PLAIN};
-    assert_int_equal(identify_disks(&ctx), 0);
-    assert_string_equal(capture_stdout(), "/dev/nvme0n2: type=data,lun=7\n");
-    assert_string_equal(capture_stderr(), "failed to get namespace id: /dev/nvme0n1\n");
-}
-
-static void test_identify_disks_nsid_failure_json(void **state)
-{
-    (void)state;
-
-    create_file(fake_sys_class_nvme_path, "nvme0/device/vendor", "0x1414");
-    create_file(fake_sys_class_nvme_path, "nvme0/model", MSFT_NVME_ACCELERATOR_MODEL_V1);
-    create_dir(fake_sys_class_nvme_path, "nvme0/nvme0n1");
-    create_dir(fake_sys_class_nvme_path, "nvme0/nvme0n2");
-
-    expect_string(__wrap_get_nsid_from_namespace_device_path, namespace_path, "/dev/nvme0n1");
-    will_return(__wrap_get_nsid_from_namespace_device_path, -1);
-    expect_namespace_vs("/dev/nvme0n2", 9, strdup(""));
-
-    struct context ctx = {.output_format = JSON};
-    assert_int_equal(identify_disks(&ctx), 0);
-    assert_true(compare_json_strings(
-        capture_stdout(), "[{\"path\":\"/dev/nvme0n1\",\"nsid\":null,\"model\":\"MSFT NVMe Accelerator v1.0\","
-                          "\"properties\":{},\"vs\":null},"
-                          "{\"path\":\"/dev/nvme0n2\",\"nsid\":9,\"model\":\"MSFT NVMe Accelerator v1.0\","
-                          "\"properties\":{\"type\":\"data\",\"lun\":7},\"vs\":\"\"}]"));
-    assert_string_equal(capture_stderr(), "failed to get namespace id: /dev/nvme0n1\n");
 }
 
 static void test_identify_disks_controller_failure(void **state)
@@ -660,9 +692,15 @@ static void test_identify_disks_controller_failure(void **state)
     _setup_nvme6_remote_accelerator_v1_with_vs();
 
     struct context ctx = {.output_format = PLAIN};
-    assert_int_equal(identify_disks(&ctx), 0);
-    assert_string_equal(capture_stderr(), "failed to initialize NVMe controller nvme0\n"
-                                          "failed to initialize NVMe controller nvme2\n");
+    assert_int_equal(identify_disks(&ctx), EXIT_CODE_SUCCESS);
+    char expected[2 * MAX_PATH + 256];
+    snprintf(expected, sizeof(expected),
+             "failed to open %s/nvme0/model: %s\n"
+             "failed to initialize NVMe controller nvme0\n"
+             "failed to read model name from %s/nvme2/model: unexpected end of file\n"
+             "failed to initialize NVMe controller nvme2\n",
+             fake_sys_class_nvme_path, strerror(ENOENT), fake_sys_class_nvme_path);
+    assert_string_equal(capture_stderr(), expected);
     assert_string_equal(capture_stdout(), "/dev/nvme1n1: key1=nvme1n1value1,key2=nvme1n1value2\n"
                                           "/dev/nvme6n1: key1=nvme6n1value1,key2=nvme6n1value2\n");
 }
@@ -680,9 +718,15 @@ static void test_identify_disks_controller_failure_json(void **state)
     _setup_nvme6_remote_accelerator_v1_with_vs();
 
     struct context ctx = {.output_format = JSON};
-    assert_int_equal(identify_disks(&ctx), 0);
-    assert_string_equal(capture_stderr(), "failed to initialize NVMe controller nvme0\n"
-                                          "failed to initialize NVMe controller nvme2\n");
+    assert_int_equal(identify_disks(&ctx), EXIT_CODE_SUCCESS);
+    char expected[2 * MAX_PATH + 256];
+    snprintf(expected, sizeof(expected),
+             "failed to open %s/nvme0/model: %s\n"
+             "failed to initialize NVMe controller nvme0\n"
+             "failed to read model name from %s/nvme2/model: unexpected end of file\n"
+             "failed to initialize NVMe controller nvme2\n",
+             fake_sys_class_nvme_path, strerror(ENOENT), fake_sys_class_nvme_path);
+    assert_string_equal(capture_stderr(), expected);
     assert_true(compare_json_strings(capture_stdout(),
                                      "[{\"path\":\"/dev/nvme1n1\",\"nsid\":1,\"model\":\"Unknown model\","
                                      "\"properties\":{\"key1\":\"nvme1n1value1\",\"key2\":\"nvme1n1value2\"},"
@@ -692,13 +736,57 @@ static void test_identify_disks_controller_failure_json(void **state)
                                      "\"vs\":\"key1=nvme6n1value1,key2=nvme6n1value2\"}]"));
 }
 
+static void test_enumerate_namespaces_missing_controller(void **state)
+{
+    (void)state;
+
+    struct nvme_controller ctrl = {0};
+    snprintf(ctrl.name, sizeof(ctrl.name), "nvme0");
+    snprintf(ctrl.sys_path, sizeof(ctrl.sys_path), "%s/nvme0", fake_sys_class_nvme_path);
+
+    struct context ctx = {.output_format = JSON};
+    json_object *namespaces = json_object_new_array();
+    assert_non_null(namespaces);
+
+    int result = enumerate_namespaces_for_controller(&ctrl, &ctx, namespaces);
+    size_t count = json_object_array_length(namespaces);
+    json_object_put(namespaces);
+    assert_int_equal(result, EXIT_CODE_SUCCESS);
+    assert_int_equal(count, 0);
+
+    char expected[MAX_PATH + 128];
+    snprintf(expected, sizeof(expected), "failed scandir for %s: %s\n", ctrl.sys_path, strerror(ENOENT));
+    assert_string_equal(capture_stderr(), expected);
+    assert_string_equal(capture_stdout(), "");
+}
+
+static void test_identify_disks_controller_model_read_error(void **state)
+{
+    (void)state;
+
+    create_file(fake_sys_class_nvme_path, "nvme0/device/vendor", "0x1414");
+    create_dir(fake_sys_class_nvme_path, "nvme0/model");
+    create_dir(fake_sys_class_nvme_path, "nvme0/nvme0n1");
+    _setup_nvme1_microsoft_one_namespace();
+
+    struct context ctx = {.output_format = PLAIN};
+    assert_int_equal(identify_disks(&ctx), EXIT_CODE_SUCCESS);
+    char expected[MAX_PATH + 256];
+    snprintf(expected, sizeof(expected),
+             "failed to read model name from %s/nvme0/model: %s\n"
+             "failed to initialize NVMe controller nvme0\n",
+             fake_sys_class_nvme_path, strerror(EISDIR));
+    assert_string_equal(capture_stderr(), expected);
+    assert_string_equal(capture_stdout(), "/dev/nvme1n1: key1=nvme1n1value1,key2=nvme1n1value2\n");
+}
+
 static void test_identify_disks_no_sys_class_nvme_present_json(void **state)
 {
     (void)state;
 
     assert_int_equal(rmdir(fake_sys_class_nvme_path), 0);
     struct context ctx = {.output_format = JSON};
-    assert_int_equal(identify_disks(&ctx), 0);
+    assert_int_equal(identify_disks(&ctx), EXIT_CODE_SUCCESS);
     assert_true(compare_json_strings(capture_stdout(), "[]"));
     assert_non_null(strstr(capture_stderr(), strerror(ENOENT)));
 }
@@ -720,7 +808,7 @@ static void test_identify_disks_namespace_permission_denied(void **state)
     struct context ctx = {.output_format = JSON};
     int result = identify_disks(&ctx);
     assert_int_equal(chmod(controller_path, 0700), 0);
-    assert_int_equal(result, EACCES);
+    assert_int_equal(result, EXIT_CODE_NAMESPACE_SCAN);
     assert_non_null(strstr(capture_stderr(), strerror(EACCES)));
     assert_string_equal(capture_stdout(), "");
 }
@@ -738,7 +826,7 @@ static void test_identify_disks_permission_denied(void **state)
     struct context ctx = {.output_format = PLAIN};
     int result = identify_disks(&ctx);
     assert_int_equal(chmod(fake_sys_class_nvme_path, 0700), 0);
-    assert_int_equal(result, EACCES);
+    assert_int_equal(result, EXIT_CODE_CONTROLLER_SCAN);
     assert_non_null(strstr(capture_stderr(), strerror(EACCES)));
     assert_string_equal(capture_stdout(), "");
 }
@@ -747,6 +835,10 @@ int main(void)
 {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_trim_trailing_whitespace),
+        cmocka_unit_test_setup_teardown(test_identify_namespace_without_vs_missing_model, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_namespace_without_vs_model_read_error, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_namespace_without_vs_empty_model, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_disks_vendor_failures, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_no_sys_class_nvme_present, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_sys_class_nvme_empty, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_sys_class_nvme_empty_json, setup, teardown),
@@ -757,8 +849,8 @@ int main(void)
         cmocka_unit_test_setup_teardown(test_identify_disks_controller_failure_json, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_nonmatching_nsid, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_nonmatching_nsid_json, setup, teardown),
-        cmocka_unit_test_setup_teardown(test_identify_disks_nsid_failure, setup, teardown),
-        cmocka_unit_test_setup_teardown(test_identify_disks_nsid_failure_json, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_enumerate_namespaces_missing_controller, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_disks_controller_model_read_error, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_no_sys_class_nvme_present_json, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_namespace_permission_denied, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_permission_denied, setup, teardown),
