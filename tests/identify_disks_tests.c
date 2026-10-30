@@ -1,4 +1,5 @@
 #include <dirent.h>
+#include <errno.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -22,6 +23,8 @@
 #define MSFT_NVME_ACCELERATOR_MODEL_V1 "MSFT NVMe Accelerator v1.0              \n"
 
 char *fake_sys_class_nvme_path = "/sys/class/nvme";
+
+bool compare_json_strings(const char *json_str1, const char *json_str2);
 
 int __wrap_get_nsid_from_namespace_device_path(const char *namespace_path)
 {
@@ -358,6 +361,16 @@ static void test_identify_disks_sys_class_nvme_empty(void **state)
     assert_string_equal(capture_stdout(), "");
 }
 
+static void test_identify_disks_sys_class_nvme_empty_json(void **state)
+{
+    (void)state;
+
+    struct context ctx = {.output_format = JSON};
+    assert_int_equal(identify_disks(&ctx), 0);
+    assert_string_equal(capture_stderr(), "");
+    assert_true(compare_json_strings(capture_stdout(), "[]"));
+}
+
 static void test_identify_disks(void **state)
 {
     struct
@@ -679,12 +692,64 @@ static void test_identify_disks_controller_failure_json(void **state)
                                      "\"vs\":\"key1=nvme6n1value1,key2=nvme6n1value2\"}]"));
 }
 
+static void test_identify_disks_no_sys_class_nvme_present_json(void **state)
+{
+    (void)state;
+
+    assert_int_equal(rmdir(fake_sys_class_nvme_path), 0);
+    struct context ctx = {.output_format = JSON};
+    assert_int_equal(identify_disks(&ctx), 0);
+    assert_true(compare_json_strings(capture_stdout(), "[]"));
+    assert_non_null(strstr(capture_stderr(), strerror(ENOENT)));
+}
+
+static void test_identify_disks_namespace_permission_denied(void **state)
+{
+    (void)state;
+
+    if (geteuid() == 0)
+    {
+        skip();
+    }
+
+    _setup_nvme0_microsoft_no_name_namespaces();
+    char controller_path[MAX_PATH];
+    snprintf(controller_path, sizeof(controller_path), "%s/nvme0", fake_sys_class_nvme_path);
+
+    assert_int_equal(chmod(controller_path, 0100), 0);
+    struct context ctx = {.output_format = JSON};
+    int result = identify_disks(&ctx);
+    assert_int_equal(chmod(controller_path, 0700), 0);
+    assert_int_equal(result, EACCES);
+    assert_non_null(strstr(capture_stderr(), strerror(EACCES)));
+    assert_string_equal(capture_stdout(), "");
+}
+
+static void test_identify_disks_permission_denied(void **state)
+{
+    (void)state;
+
+    if (geteuid() == 0)
+    {
+        skip();
+    }
+
+    assert_int_equal(chmod(fake_sys_class_nvme_path, 0000), 0);
+    struct context ctx = {.output_format = PLAIN};
+    int result = identify_disks(&ctx);
+    assert_int_equal(chmod(fake_sys_class_nvme_path, 0700), 0);
+    assert_int_equal(result, EACCES);
+    assert_non_null(strstr(capture_stderr(), strerror(EACCES)));
+    assert_string_equal(capture_stdout(), "");
+}
+
 int main(void)
 {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_trim_trailing_whitespace),
         cmocka_unit_test_setup_teardown(test_identify_disks_no_sys_class_nvme_present, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_sys_class_nvme_empty, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_disks_sys_class_nvme_empty_json, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_combined, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_combined_json, setup, teardown),
@@ -694,6 +759,9 @@ int main(void)
         cmocka_unit_test_setup_teardown(test_identify_disks_nonmatching_nsid_json, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_nsid_failure, setup, teardown),
         cmocka_unit_test_setup_teardown(test_identify_disks_nsid_failure_json, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_disks_no_sys_class_nvme_present_json, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_disks_namespace_permission_denied, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_identify_disks_permission_denied, setup, teardown),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);

@@ -6,12 +6,14 @@
 
 #include <ctype.h>
 #include <dirent.h>
+#include <errno.h>
 #include <json-c/json.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "checked.h"
 #include "debug.h"
 #include "identify_disks.h"
 #include "nvme.h"
@@ -54,7 +56,7 @@ char *identify_namespace_without_vs(const char *controller_sys_path, int nsid)
     if (file == NULL)
     {
         DEBUG_PRINTF("failed to open %s: %m\n", model_path);
-        return strdup("");
+        return strdup_checked("");
     }
 
     char *result = fgets(model_name, sizeof(model_name), file);
@@ -62,7 +64,7 @@ char *identify_namespace_without_vs(const char *controller_sys_path, int nsid)
     {
         DEBUG_PRINTF("failed to read model name from %s: %m\n", model_path);
         fclose(file);
-        return strdup("");
+        return strdup_checked("");
     }
 
     fclose(file);
@@ -77,24 +79,26 @@ char *identify_namespace_without_vs(const char *controller_sys_path, int nsid)
         // A data disk's lun id == nsid - 2.
         if (nsid == 1)
         {
-            return strdup("type=os");
+            return strdup_checked("type=os");
         }
         else
         {
             char *output = NULL;
-            if (asprintf(&output, "type=data,lun=%d", nsid - 2) > 0)
+            if (asprintf(&output, "type=data,lun=%d", nsid - 2) < 0)
             {
-                return output;
+                fprintf(stderr, "asprintf() failed: %m\n");
+                exit(ENOMEM);
             }
+            return output;
         }
     }
     else if (strcmp(model_name, "Microsoft NVMe Direct Disk") == 0 ||
              strcmp(model_name, "Microsoft NVMe Direct Disk v2") == 0)
     {
-        return strdup("type=local");
+        return strdup_checked("type=local");
     }
 
-    return strdup("");
+    return strdup_checked("");
 }
 
 /**
@@ -103,8 +107,8 @@ char *identify_namespace_without_vs(const char *controller_sys_path, int nsid)
  */
 json_object *parse_vs_string(const char *vs)
 {
-    json_object *vs_obj = json_object_new_object();
-    char *vs_copy = strdup(vs);
+    json_object *vs_obj = json_object_new_object_checked();
+    char *vs_copy = strdup_checked(vs);
     char *token;
     char *rest = vs_copy;
 
@@ -121,16 +125,16 @@ json_object *parse_vs_string(const char *vs)
                 if (int_value == 0 && strcmp(value, "0") != 0)
                 {
                     fprintf(stderr, "failed to parse vs=%s key=%s value=%s as int\n", vs, key, value);
-                    json_object_object_add(vs_obj, key, json_object_new_string(value));
+                    json_object_object_add_checked(vs_obj, key, json_object_new_string_checked(value));
                 }
                 else
                 {
-                    json_object_object_add(vs_obj, key, json_object_new_int(int_value));
+                    json_object_object_add_checked(vs_obj, key, json_object_new_int_checked(int_value));
                 }
             }
             else
             {
-                json_object_object_add(vs_obj, key, json_object_new_string(value));
+                json_object_object_add_checked(vs_obj, key, json_object_new_string_checked(value));
             }
         }
     }
@@ -142,16 +146,17 @@ json_object *parse_vs_string(const char *vs)
 /**
  * Enumerate namespaces for a controller.
  */
-void enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct context *ctx,
-                                         json_object *namespaces_array)
+int enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct context *ctx,
+                                        json_object *namespaces_array)
 {
     struct dirent **namelist;
 
     int n = scandir(ctrl->sys_path, &namelist, is_nvme_namespace, versionsort);
     if (n < 0)
     {
+        int result = errno == ENOENT ? 0 : errno;
         fprintf(stderr, "failed scandir for %s: %m\n", ctrl->sys_path);
-        return;
+        return result;
     }
 
     DEBUG_PRINTF("found %d namespace(s) for controller=%s:\n", n, ctrl->name);
@@ -172,11 +177,11 @@ void enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct co
             vs = nvme_identify_namespace_vs(namespace_path, nsid);
         }
 
-        json_object *namespace_obj = json_object_new_object();
-        json_object_object_add(namespace_obj, "path", json_object_new_string(namespace_path));
-        json_object_object_add(namespace_obj, "model", json_object_new_string(ctrl->model));
-        json_object_object_add(namespace_obj, "nsid", nsid < 0 ? NULL : json_object_new_int(nsid));
-        json_object_array_add(namespaces_array, namespace_obj);
+        json_object *namespace_obj = json_object_new_object_checked();
+        json_object_object_add_checked(namespace_obj, "path", json_object_new_string_checked(namespace_path));
+        json_object_object_add_checked(namespace_obj, "model", json_object_new_string_checked(ctrl->model));
+        json_object_object_add_checked(namespace_obj, "nsid", nsid < 0 ? NULL : json_object_new_int_checked(nsid));
+        json_object_array_add_checked(namespaces_array, namespace_obj);
 
         if (vs != NULL)
         {
@@ -186,7 +191,7 @@ void enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct co
             }
             else
             {
-                id = strdup(vs);
+                id = strdup_checked(vs);
             }
 
             if (ctx->output_format == PLAIN)
@@ -197,28 +202,29 @@ void enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct co
 
         if (id != NULL)
         {
-            json_object_object_add(namespace_obj, "properties", parse_vs_string(id));
+            json_object_object_add_checked(namespace_obj, "properties", parse_vs_string(id));
             free(id);
         }
         else
         {
-            json_object_object_add(namespace_obj, "properties", json_object_new_object());
+            json_object_object_add_checked(namespace_obj, "properties", json_object_new_object_checked());
         }
 
         if (vs != NULL)
         {
-            json_object_object_add(namespace_obj, "vs", json_object_new_string(vs));
+            json_object_object_add_checked(namespace_obj, "vs", json_object_new_string_checked(vs));
             free(vs);
         }
         else
         {
-            json_object_object_add(namespace_obj, "vs", NULL);
+            json_object_object_add_checked(namespace_obj, "vs", NULL);
         }
 
         free(namelist[i]);
     }
 
     free(namelist);
+    return 0;
 }
 
 /**
@@ -303,11 +309,13 @@ bool initialize_nvme_controller(struct nvme_controller *ctrl, const char *name)
 int identify_disks(struct context *ctx)
 {
     struct dirent **namelist = NULL;
-    json_object *namespaces_array = json_object_new_array();
+    int result = 0;
+    json_object *namespaces_array = json_object_new_array_checked();
 
     int n = scandir(SYS_CLASS_NVME_PATH, &namelist, is_azure_nvme_controller, versionsort);
     if (n < 0)
     {
+        result = errno == ENOENT ? 0 : errno;
         fprintf(stderr, "no NVMe devices in %s: %m\n", SYS_CLASS_NVME_PATH);
         n = 0;
     }
@@ -319,25 +327,32 @@ int identify_disks(struct context *ctx)
 
         if (initialize_nvme_controller(&ctrl, namelist[i]->d_name))
         {
-            enumerate_namespaces_for_controller(&ctrl, ctx, namespaces_array);
+            result = enumerate_namespaces_for_controller(&ctrl, ctx, namespaces_array);
+            if (result != 0)
+            {
+                break;
+            }
         }
         else
         {
             fprintf(stderr, "failed to initialize NVMe controller %s\n", namelist[i]->d_name);
         }
-        free(namelist[i]);
     }
 
+    for (int i = 0; i < n; i++)
+    {
+        free(namelist[i]);
+    }
     free(namelist);
 
-    if (ctx->output_format == JSON)
+    if (result == 0 && ctx->output_format == JSON)
     {
         int flags = JSON_C_TO_STRING_NOSLASHESCAPE | JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_SPACED;
 
-        const char *json_output = json_object_to_json_string_ext(namespaces_array, flags);
+        const char *json_output = json_object_to_json_string_ext_checked(namespaces_array, flags);
         printf("%s\n", json_output);
-        json_object_put(namespaces_array);
     }
 
-    return 0;
+    json_object_put(namespaces_array);
+    return result;
 }

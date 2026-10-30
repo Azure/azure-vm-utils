@@ -4,6 +4,7 @@
  * information.
  */
 
+#include <errno.h>
 #include <fcntl.h>
 #include <linux/nvme_ioctl.h>
 #include <stdio.h>
@@ -12,6 +13,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+#include "checked.h"
 #include "debug.h"
 #include "nvme.h"
 
@@ -66,11 +68,11 @@ struct nvme_id_ns *nvme_identify_namespace(const char *device_path, int nsid)
     }
 
     struct nvme_id_ns *ns = NULL;
-    if (posix_memalign((void **)&ns, pagesize, sizeof(struct nvme_id_ns)) != 0)
+    int error = posix_memalign((void **)&ns, pagesize, sizeof(struct nvme_id_ns));
+    if (error != 0)
     {
-        fprintf(stderr, "failed posix_memalign for %s: %m\n", device_path);
-        close(fd);
-        return NULL;
+        fprintf(stderr, "failed posix_memalign for %s: %s\n", device_path, strerror(error));
+        exit(ENOMEM);
     }
 
     struct nvme_admin_cmd cmd = {
@@ -117,7 +119,7 @@ char *nvme_identify_namespace_vs(const char *device_path, int nsid)
         return NULL;
     }
 
-    char *vs = strndup((const char *)ns->vs, sizeof(ns->vs));
+    char *vs = strndup_checked((const char *)ns->vs, sizeof(ns->vs));
     free(ns);
 
     return vs;

@@ -34,6 +34,9 @@ struct nvme_id_ns empty_ns = {
     0,
 };
 
+char *__real_strndup(const char *value, size_t length);
+static bool fail_strndup;
+
 int __wrap_open(const char *pathname, int flags, ...)
 {
     check_expected(pathname);
@@ -62,16 +65,22 @@ int __wrap_posix_memalign(void **memptr, size_t alignment, size_t size)
     check_expected(size);
 
     int ret = mock_type(int);
-    if (ret < 0)
-    {
-        errno = mock_type(int);
-    }
-    else if (ret == 0)
+    if (ret == 0)
     {
         *memptr = malloc(size);
     }
 
     return ret;
+}
+
+char *__wrap_strndup(const char *value, size_t length)
+{
+    if (fail_strndup)
+    {
+        errno = ENOMEM;
+        return NULL;
+    }
+    return __real_strndup(value, length);
 }
 
 int __wrap_ioctl(int fd, unsigned long request, ...)
@@ -168,6 +177,7 @@ static void test_nvme_identify_namespace_success(void **state)
     struct nvme_id_ns *result = nvme_identify_namespace(OPEN_PATH, NSID);
 
     assert_non_null(result);
+    free(result);
 
     assert_string_equal(capture_stdout(), "");
     assert_string_equal(capture_stderr(), "");
@@ -194,22 +204,21 @@ static void test_nvme_identify_namespace_failure_to_posix_memalign(void **state)
 {
     (void)state; // Unused parameter
 
-    expect_string(__wrap_open, pathname, OPEN_PATH);
-    expect_value(__wrap_open, flags, O_RDONLY);
-    will_return(__wrap_open, OPEN_FD);
-
-    expect_any(__wrap_posix_memalign, memptr);
-    expect_value(__wrap_posix_memalign, alignment, sysconf(_SC_PAGESIZE));
-    expect_value(__wrap_posix_memalign, size, sizeof(struct nvme_id_ns));
-    will_return(__wrap_posix_memalign, -1);
-    will_return(__wrap_posix_memalign, ENOLINK);
-
-    expect_value(__wrap_close, fd, OPEN_FD);
-    will_return(__wrap_close, 0);
-
-    struct nvme_id_ns *result = nvme_identify_namespace(OPEN_PATH, NSID);
-
-    assert_null(result);
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, OPEN_PATH);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
+        expect_any(__wrap_posix_memalign, memptr);
+        expect_value(__wrap_posix_memalign, alignment, sysconf(_SC_PAGESIZE));
+        expect_value(__wrap_posix_memalign, size, sizeof(struct nvme_id_ns));
+        will_return(__wrap_posix_memalign, ENOLINK);
+        errno = EINVAL;
+        nvme_identify_namespace(OPEN_PATH, NSID);
+        _exit(EXIT_SUCCESS);
+    }
+    capture_wait(child, ENOMEM);
     assert_string_equal(capture_stdout(), "");
     assert_string_equal(capture_stderr(), "failed posix_memalign for /dev/nvme199n19: Link has been severed\n");
 }
@@ -244,6 +253,36 @@ static void test_nvme_identify_namespace_failure_to_ioctl(void **state)
     assert_string_equal(capture_stdout(), "");
     assert_string_equal(capture_stderr(), "failed NVME_IOCTL_ADMIN_CMD ioctl for /dev/nvme199n19: "
                                           "Structure needs cleaning\n");
+}
+
+static void test_nvme_identify_namespace_vs_allocation_failure(void **state)
+{
+    (void)state;
+
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, OPEN_PATH);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
+        expect_any(__wrap_posix_memalign, memptr);
+        expect_value(__wrap_posix_memalign, alignment, sysconf(_SC_PAGESIZE));
+        expect_value(__wrap_posix_memalign, size, sizeof(struct nvme_id_ns));
+        will_return(__wrap_posix_memalign, 0);
+        expect_value(__wrap_ioctl, fd, OPEN_FD);
+        expect_value(__wrap_ioctl, request, NVME_IOCTL_ADMIN_CMD);
+        will_return(__wrap_ioctl, NSID);
+        will_return(__wrap_ioctl, &empty_ns);
+        will_return(__wrap_ioctl, 0);
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
+        fail_strndup = true;
+        nvme_identify_namespace_vs(OPEN_PATH, NSID);
+        _exit(EXIT_SUCCESS);
+    }
+    capture_wait(child, ENOMEM);
+    assert_string_equal(capture_stdout(), "");
+    assert_string_equal(capture_stderr(), "strndup() failed: Cannot allocate memory\n");
 }
 
 static void test_nvme_identify_namespace_vs_success(void **state)
@@ -463,6 +502,7 @@ static int setup(void **state)
 {
     (void)state; // Unused parameter
 
+    fail_strndup = false;
     capture_setup(state);
 
     return 0;
@@ -484,6 +524,7 @@ int main(void)
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_failure_to_open, setup, teardown),
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_failure_to_posix_memalign, setup, teardown),
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_failure_to_ioctl, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_vs_allocation_failure, setup, teardown),
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_vs_success, setup, teardown),
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_vs_failure, setup, teardown),
         cmocka_unit_test_setup_teardown(test_get_nsid_from_namespace_device_path_success, setup, teardown),
