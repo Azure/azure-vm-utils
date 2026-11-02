@@ -39,6 +39,7 @@ struct context
 };
 
 void trim_trailing_whitespace(char *str);
+char *identify_namespace_without_vs(const char *controller_sys_path, int nsid);
 int is_microsoft_nvme_device(const char *device_name);
 int is_nvme_namespace(const struct dirent *entry);
 int enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct context *ctx,

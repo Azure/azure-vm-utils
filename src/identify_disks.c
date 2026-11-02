@@ -15,6 +15,7 @@
 
 #include "checked.h"
 #include "debug.h"
+#include "exit_code.h"
 #include "identify_disks.h"
 #include "nvme.h"
 
@@ -55,15 +56,24 @@ char *identify_namespace_without_vs(const char *controller_sys_path, int nsid)
     FILE *file = fopen(model_path, "r");
     if (file == NULL)
     {
-        DEBUG_PRINTF("failed to open %s: %m\n", model_path);
+        fprintf(stderr, "failed to open %s: %m\n", model_path);
+        // Keep the namespace with empty properties when fallback metadata is unavailable.
         return strdup_checked("");
     }
 
     char *result = fgets(model_name, sizeof(model_name), file);
     if (result == NULL)
     {
-        DEBUG_PRINTF("failed to read model name from %s: %m\n", model_path);
+        if (ferror(file))
+        {
+            fprintf(stderr, "failed to read model name from %s: %m\n", model_path);
+        }
+        else
+        {
+            fprintf(stderr, "failed to read model name from %s: unexpected end of file\n", model_path);
+        }
         fclose(file);
+        // Keep the namespace with empty properties when fallback metadata is unavailable.
         return strdup_checked("");
     }
 
@@ -87,7 +97,7 @@ char *identify_namespace_without_vs(const char *controller_sys_path, int nsid)
             if (asprintf(&output, "type=data,lun=%d", nsid - 2) < 0)
             {
                 fprintf(stderr, "asprintf() failed: %m\n");
-                exit(ENOMEM);
+                exit(EXIT_CODE_NO_MEMORY);
             }
             return output;
         }
@@ -125,6 +135,7 @@ json_object *parse_vs_string(const char *vs)
                 if (int_value == 0 && strcmp(value, "0") != 0)
                 {
                     fprintf(stderr, "failed to parse vs=%s key=%s value=%s as int\n", vs, key, value);
+                    // Preserve the reported value as a string instead of failing enumeration.
                     json_object_object_add_checked(vs_obj, key, json_object_new_string_checked(value));
                 }
                 else
@@ -154,7 +165,8 @@ int enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct con
     int n = scandir(ctrl->sys_path, &namelist, is_nvme_namespace, versionsort);
     if (n < 0)
     {
-        int result = errno == ENOENT ? 0 : errno;
+        // A controller removed during enumeration has no remaining namespaces to report.
+        int result = errno == ENOENT ? EXIT_CODE_SUCCESS : EXIT_CODE_NAMESPACE_SCAN;
         fprintf(stderr, "failed scandir for %s: %m\n", ctrl->sys_path);
         return result;
     }
@@ -162,69 +174,43 @@ int enumerate_namespaces_for_controller(struct nvme_controller *ctrl, struct con
     DEBUG_PRINTF("found %d namespace(s) for controller=%s:\n", n, ctrl->name);
     for (int i = 0; i < n; i++)
     {
-        char *id = NULL;
-        char *vs = NULL;
+        char *id;
         char namespace_path[MAX_PATH];
         snprintf(namespace_path, sizeof(namespace_path), "/dev/%s", namelist[i]->d_name);
 
         int nsid = get_nsid_from_namespace_device_path(namespace_path);
-        if (nsid < 0)
-        {
-            fprintf(stderr, "failed to get namespace id: %s\n", namespace_path);
-        }
-        else
-        {
-            vs = nvme_identify_namespace_vs(namespace_path, nsid);
-        }
+        char *vs = nvme_identify_namespace_vs(namespace_path, nsid);
 
         json_object *namespace_obj = json_object_new_object_checked();
         json_object_object_add_checked(namespace_obj, "path", json_object_new_string_checked(namespace_path));
         json_object_object_add_checked(namespace_obj, "model", json_object_new_string_checked(ctrl->model));
-        json_object_object_add_checked(namespace_obj, "nsid", nsid < 0 ? NULL : json_object_new_int_checked(nsid));
+        json_object_object_add_checked(namespace_obj, "nsid", json_object_new_int_checked(nsid));
         json_object_array_add_checked(namespaces_array, namespace_obj);
 
-        if (vs != NULL)
+        if (vs[0] == 0)
         {
-            if (vs[0] == 0)
-            {
-                id = identify_namespace_without_vs(ctrl->sys_path, nsid);
-            }
-            else
-            {
-                id = strdup_checked(vs);
-            }
-
-            if (ctx->output_format == PLAIN)
-            {
-                printf("%s: %s\n", namespace_path, id);
-            }
-        }
-
-        if (id != NULL)
-        {
-            json_object_object_add_checked(namespace_obj, "properties", parse_vs_string(id));
-            free(id);
+            id = identify_namespace_without_vs(ctrl->sys_path, nsid);
         }
         else
         {
-            json_object_object_add_checked(namespace_obj, "properties", json_object_new_object_checked());
+            id = strdup_checked(vs);
         }
 
-        if (vs != NULL)
+        if (ctx->output_format == PLAIN)
         {
-            json_object_object_add_checked(namespace_obj, "vs", json_object_new_string_checked(vs));
-            free(vs);
+            printf("%s: %s\n", namespace_path, id);
         }
-        else
-        {
-            json_object_object_add_checked(namespace_obj, "vs", NULL);
-        }
+
+        json_object_object_add_checked(namespace_obj, "properties", parse_vs_string(id));
+        free(id);
+        json_object_object_add_checked(namespace_obj, "vs", json_object_new_string_checked(vs));
+        free(vs);
 
         free(namelist[i]);
     }
 
     free(namelist);
-    return 0;
+    return EXIT_CODE_SUCCESS;
 }
 
 /**
@@ -238,18 +224,29 @@ int is_microsoft_nvme_device(const char *device_name)
     FILE *file = fopen(vendor_id_path, "r");
     if (file == NULL)
     {
+        fprintf(stderr, "failed to open %s: %m\n", vendor_id_path);
+        // Skip unverified controllers so other devices can still be enumerated.
         return 0;
     }
 
     unsigned int vendor_id;
     int result = fscanf(file, "%x", &vendor_id);
-    fclose(file);
-
     if (result != 1)
     {
+        if (ferror(file))
+        {
+            fprintf(stderr, "failed to read vendor ID from %s: %m\n", vendor_id_path);
+        }
+        else
+        {
+            fprintf(stderr, "failed to parse vendor ID from %s: expected a hexadecimal vendor ID\n", vendor_id_path);
+        }
+        fclose(file);
+        // Skip unverified controllers so other devices can still be enumerated.
         return 0;
     }
 
+    fclose(file);
     return vendor_id == MICROSOFT_NVME_VENDOR_ID;
 }
 
@@ -286,14 +283,21 @@ bool initialize_nvme_controller(struct nvme_controller *ctrl, const char *name)
     FILE *file = fopen(model_path, "r");
     if (file == NULL)
     {
-        DEBUG_PRINTF("failed to open %s: %m\n", model_path);
+        fprintf(stderr, "failed to open %s: %m\n", model_path);
         return false;
     }
 
     char *result = fgets(ctrl->model, sizeof(ctrl->model), file);
     if (result == NULL)
     {
-        DEBUG_PRINTF("failed to read model name from %s: %m\n", model_path);
+        if (ferror(file))
+        {
+            fprintf(stderr, "failed to read model name from %s: %m\n", model_path);
+        }
+        else
+        {
+            fprintf(stderr, "failed to read model name from %s: unexpected end of file\n", model_path);
+        }
         fclose(file);
         return false;
     }
@@ -309,13 +313,14 @@ bool initialize_nvme_controller(struct nvme_controller *ctrl, const char *name)
 int identify_disks(struct context *ctx)
 {
     struct dirent **namelist = NULL;
-    int result = 0;
+    int result = EXIT_CODE_SUCCESS;
     json_object *namespaces_array = json_object_new_array_checked();
 
     int n = scandir(SYS_CLASS_NVME_PATH, &namelist, is_azure_nvme_controller, versionsort);
     if (n < 0)
     {
-        result = errno == ENOENT ? 0 : errno;
+        // Systems without NVMe devices may have no controller directory.
+        result = errno == ENOENT ? EXIT_CODE_SUCCESS : EXIT_CODE_CONTROLLER_SCAN;
         fprintf(stderr, "no NVMe devices in %s: %m\n", SYS_CLASS_NVME_PATH);
         n = 0;
     }
@@ -328,13 +333,14 @@ int identify_disks(struct context *ctx)
         if (initialize_nvme_controller(&ctrl, namelist[i]->d_name))
         {
             result = enumerate_namespaces_for_controller(&ctrl, ctx, namespaces_array);
-            if (result != 0)
+            if (result != EXIT_CODE_SUCCESS)
             {
                 break;
             }
         }
         else
         {
+            // Skip controllers with unavailable model metadata and continue enumeration.
             fprintf(stderr, "failed to initialize NVMe controller %s\n", namelist[i]->d_name);
         }
     }
@@ -345,7 +351,7 @@ int identify_disks(struct context *ctx)
     }
     free(namelist);
 
-    if (result == 0 && ctx->output_format == JSON)
+    if (result == EXIT_CODE_SUCCESS && ctx->output_format == JSON)
     {
         int flags = JSON_C_TO_STRING_NOSLASHESCAPE | JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_SPACED;
 

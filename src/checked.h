@@ -13,13 +13,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "exit_code.h"
+
 /* Checked allocation helpers terminate the process on failure. */
 static inline void json_object_array_add_checked(json_object *array, json_object *value)
 {
     if (json_object_array_add(array, value) != 0)
     {
         fprintf(stderr, "json_object_array_add() failed: %m\n");
-        exit(ENOMEM);
+        exit(EXIT_CODE_NO_MEMORY);
     }
 }
 
@@ -29,7 +31,7 @@ static inline json_object *json_object_new_array_checked(void)
     if (array == NULL)
     {
         fprintf(stderr, "json_object_new_array() failed: %m\n");
-        exit(ENOMEM);
+        exit(EXIT_CODE_NO_MEMORY);
     }
     return array;
 }
@@ -40,7 +42,7 @@ static inline json_object *json_object_new_int_checked(int value)
     if (property == NULL)
     {
         fprintf(stderr, "json_object_new_int() failed: %m\n");
-        exit(ENOMEM);
+        exit(EXIT_CODE_NO_MEMORY);
     }
     return property;
 }
@@ -51,7 +53,7 @@ static inline json_object *json_object_new_object_checked(void)
     if (object == NULL)
     {
         fprintf(stderr, "json_object_new_object() failed: %m\n");
-        exit(ENOMEM);
+        exit(EXIT_CODE_NO_MEMORY);
     }
     return object;
 }
@@ -62,7 +64,7 @@ static inline json_object *json_object_new_string_checked(const char *value)
     if (property == NULL)
     {
         fprintf(stderr, "json_object_new_string() failed: %m\n");
-        exit(ENOMEM);
+        exit(EXIT_CODE_NO_MEMORY);
     }
     return property;
 }
@@ -72,7 +74,7 @@ static inline void json_object_object_add_checked(json_object *object, const cha
     if (json_object_object_add(object, key, value) != 0)
     {
         fprintf(stderr, "json_object_object_add() failed for %s: %m\n", key);
-        exit(ENOMEM);
+        exit(EXIT_CODE_NO_MEMORY);
     }
 }
 
@@ -82,7 +84,7 @@ static inline const char *json_object_to_json_string_ext_checked(json_object *ob
     if (json == NULL)
     {
         fprintf(stderr, "json_object_to_json_string_ext() failed: %m\n");
-        exit(ENOMEM);
+        exit(EXIT_CODE_NO_MEMORY);
     }
     return json;
 }
@@ -93,7 +95,7 @@ static inline char *strdup_checked(const char *value)
     if (copy == NULL)
     {
         fprintf(stderr, "strdup() failed: %m\n");
-        exit(ENOMEM);
+        exit(EXIT_CODE_NO_MEMORY);
     }
     return copy;
 }
@@ -104,7 +106,7 @@ static inline char *strndup_checked(const char *value, size_t length)
     if (copy == NULL)
     {
         fprintf(stderr, "strndup() failed: %m\n");
-        exit(ENOMEM);
+        exit(EXIT_CODE_NO_MEMORY);
     }
     return copy;
 }

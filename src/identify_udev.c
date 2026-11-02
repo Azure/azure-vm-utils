@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "exit_code.h"
 #include "nvme.h"
 
 /**
@@ -42,7 +43,7 @@ int print_udev_key_values_for_vs(char *vs)
     if (vs_copy == NULL)
     {
         fprintf(stderr, "strdup() failed: %m\n");
-        return 1;
+        return EXIT_CODE_NO_MEMORY;
     }
 
     char *outer_saveptr = NULL;
@@ -58,7 +59,7 @@ int print_udev_key_values_for_vs(char *vs)
         {
             fprintf(stderr, "failed to parse key-value pair: %s\n", pair);
             free(vs_copy);
-            return 1;
+            return EXIT_CODE_UDEV_INVALID_PROPERTIES;
         }
 
         print_udev_key_value(key, value);
@@ -66,7 +67,7 @@ int print_udev_key_values_for_vs(char *vs)
     }
 
     free(vs_copy);
-    return 0;
+    return EXIT_CODE_SUCCESS;
 }
 
 /**
@@ -89,16 +90,10 @@ int identify_udev_device(void)
     if (dev_name == NULL)
     {
         fprintf(stderr, "environment variable 'DEVNAME' not set\n");
-        return 1;
+        return EXIT_CODE_UDEV_MISSING_DEVNAME;
     }
 
     char *vs = nvme_identify_namespace_vs_for_namespace_device(dev_name);
-    if (vs == NULL)
-    {
-        fprintf(stderr, "failed to query namespace vendor-specific data: %s\n", dev_name);
-        return 1;
-    }
-
     printf("AZURE_DISK_VS=%s\n", vs);
     int result = print_udev_key_values_for_vs(vs);
     free(vs);

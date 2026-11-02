@@ -17,6 +17,7 @@
 
 #include "capture.h"
 #include "checked.h"
+#include "exit_code.h"
 
 int __wrap_json_object_array_add(json_object *obj, json_object *value)
 {
@@ -92,9 +93,9 @@ static void test_json_object_array_add_checked_failure(void **state)
     if (child == 0)
     {
         json_object_array_add_checked(NULL, NULL);
-        _exit(EXIT_SUCCESS);
+        _exit(EXIT_CODE_SUCCESS);
     }
-    capture_wait(child, ENOMEM);
+    capture_wait(child, EXIT_CODE_NO_MEMORY);
 }
 
 static void test_json_object_new_array_checked_failure(void **state)
@@ -105,9 +106,9 @@ static void test_json_object_new_array_checked_failure(void **state)
     if (child == 0)
     {
         json_object_new_array_checked();
-        _exit(EXIT_SUCCESS);
+        _exit(EXIT_CODE_SUCCESS);
     }
-    capture_wait(child, ENOMEM);
+    capture_wait(child, EXIT_CODE_NO_MEMORY);
 }
 
 static void test_json_object_new_int_checked_failure(void **state)
@@ -118,9 +119,9 @@ static void test_json_object_new_int_checked_failure(void **state)
     if (child == 0)
     {
         json_object_new_int_checked(1);
-        _exit(EXIT_SUCCESS);
+        _exit(EXIT_CODE_SUCCESS);
     }
-    capture_wait(child, ENOMEM);
+    capture_wait(child, EXIT_CODE_NO_MEMORY);
 }
 
 static void test_json_object_new_object_checked_failure(void **state)
@@ -131,9 +132,9 @@ static void test_json_object_new_object_checked_failure(void **state)
     if (child == 0)
     {
         json_object_new_object_checked();
-        _exit(EXIT_SUCCESS);
+        _exit(EXIT_CODE_SUCCESS);
     }
-    capture_wait(child, ENOMEM);
+    capture_wait(child, EXIT_CODE_NO_MEMORY);
 }
 
 static void test_json_object_new_string_checked_failure(void **state)
@@ -144,9 +145,9 @@ static void test_json_object_new_string_checked_failure(void **state)
     if (child == 0)
     {
         json_object_new_string_checked("test");
-        _exit(EXIT_SUCCESS);
+        _exit(EXIT_CODE_SUCCESS);
     }
-    capture_wait(child, ENOMEM);
+    capture_wait(child, EXIT_CODE_NO_MEMORY);
 }
 
 static void test_json_object_object_add_checked_failure(void **state)
@@ -157,9 +158,9 @@ static void test_json_object_object_add_checked_failure(void **state)
     if (child == 0)
     {
         json_object_object_add_checked(NULL, "key", NULL);
-        _exit(EXIT_SUCCESS);
+        _exit(EXIT_CODE_SUCCESS);
     }
-    capture_wait(child, ENOMEM);
+    capture_wait(child, EXIT_CODE_NO_MEMORY);
 }
 
 static void test_json_object_to_json_string_ext_checked_failure(void **state)
@@ -170,9 +171,9 @@ static void test_json_object_to_json_string_ext_checked_failure(void **state)
     if (child == 0)
     {
         json_object_to_json_string_ext_checked(NULL, 0);
-        _exit(EXIT_SUCCESS);
+        _exit(EXIT_CODE_SUCCESS);
     }
-    capture_wait(child, ENOMEM);
+    capture_wait(child, EXIT_CODE_NO_MEMORY);
 }
 
 static void test_strdup_checked_failure(void **state)
@@ -183,9 +184,9 @@ static void test_strdup_checked_failure(void **state)
     if (child == 0)
     {
         strdup_checked("test");
-        _exit(EXIT_SUCCESS);
+        _exit(EXIT_CODE_SUCCESS);
     }
-    capture_wait(child, ENOMEM);
+    capture_wait(child, EXIT_CODE_NO_MEMORY);
 }
 
 static void test_strndup_checked_failure(void **state)
@@ -196,9 +197,9 @@ static void test_strndup_checked_failure(void **state)
     if (child == 0)
     {
         strndup_checked("test", 4);
-        _exit(EXIT_SUCCESS);
+        _exit(EXIT_CODE_SUCCESS);
     }
-    capture_wait(child, ENOMEM);
+    capture_wait(child, EXIT_CODE_NO_MEMORY);
 }
 
 int main(void)
