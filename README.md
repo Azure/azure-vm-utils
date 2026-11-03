@@ -92,14 +92,14 @@ checks when installing from source.
 
 ## updating requirements
 
-To refresh both frozen selftest dependency lists from
+To refresh the frozen selftest dependency list from
 [selftest/test-requirements.txt](selftest/test-requirements.txt), run:
 
 ```sh
 ./scripts/update-selftest-requirements.sh
 ```
 
-This requires Docker and uses Python 3.8 and 3.10 containers to generate updated requirements.
+This requires Docker and uses a Python 3.10 container to generate updated requirements.
 
 ## test_images
 
