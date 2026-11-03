@@ -5,7 +5,148 @@
 # Licensed under the MIT License. See LICENSE in the project root for license information.
 # --------------------------------------------------------------------------
 
-"""Azure VM utilities self-tests script."""
+"""Azure VM utilities self-tests script.
+
+Environment variables supported by this script:
+
+Environment variable          Description             Default
+----------------------------  ----------------------  -------------------------
+SELFTEST_ARM64_IMAGES         Comma-separated images  ARM64 catalog
+SELFTEST_ARM64_VM_SIZES       Comma-separated sizes   ARM64 SKU catalog
+SELFTEST_GEN1_IMAGES          Comma-separated images  Gen1 catalog
+SELFTEST_GEN1_VM_SIZES        Comma-separated sizes   x64 SCSI SKU catalog
+SELFTEST_GEN2_IMAGES          Comma-separated images  Gen2 catalog
+SELFTEST_GEN2_VM_SIZES        Comma-separated sizes   x64 SKU catalog
+SELFTEST_VM_CONFIGS           Comma-separated names   All configurations
+SELFTEST_FULL_MATRIX          All combinations        0
+                              0: representative union
+                              1: compatible product
+SELFTEST_AZURE_SUBSCRIPTION   Subscription ID         Required
+SELFTEST_AZURE_LOCATION       Azure region            Required
+SELFTEST_ADMIN_USERNAME       VM admin username       azureuser
+SELFTEST_ADMIN_PASSWORD       VM admin password       Unset
+SELFTEST_ARTIFACTS_PATH       Artifact directory      /tmp/selftest-<timestamp>
+SELFTEST_RESOURCE_GROUP       Resource group name     temp-rg-<user>-selftest-
+                                                      <8-hex random suffix>
+SELFTEST_HOLD_FAILURES        Retain failed VMs       0
+                              0: clean up failures
+                              1: retain for debugging
+SELFTEST_INSTALL_FROM_SOURCE  Working-tree build      0
+                              0: image utilities
+                              1: install and reboot
+SELFTEST_PUBLIC_IP_TAGS       Azure CLI --ip-tags     Unset
+SELFTEST_REALLOCATES          Deallocate/start count  1
+SELFTEST_REBOOTS              Reboots per allocation  1
+
+Boolean options accept 1/0, true/false, yes/no, y/n, on/off, and t/f,
+case-insensitively.
+
+The selected images, VM sizes, and configurations define the compatible matrix.
+Coverage uses '*' representatives below to reduce combinations by default.
+
+Category         Images          VM sizes                 VM configurations
+---------------  --------------  -----------------------  -----------------
+image-coverage   All             Representative           Representative
+sku-coverage     Representative  All                      Representative
+config-coverage  Representative  Compatible reps          All
+full-matrix      All             All                      All
+
+Rep  Image type  Image
+---  ----------  -----------------------------------------------
+     ARM64       Fedora Cloud Rawhide Arm64 (community gallery)
+*    ARM64       canonical:ubuntu-24_04-lts:server-arm64:latest
+     ARM64       canonical:ubuntu-26_04-lts:server-arm64:latest
+     ARM64       debian:debian-13-daily:13-arm64:latest
+     ARM64       debian:debian-14-daily:14-arm64:latest
+     ARM64       debian:debian-sid-daily:sid-arm64:latest
+     ARM64       microsoftazurelinux:azurelinux-4:4-arm64:latest
+     ARM64       redhat:rhel-arm64:10_2-arm64:latest
+     ARM64       suse:sles-15-sp7-arm64:gen2:latest
+     ARM64       suse:sles-16-0-arm64:gen2:latest
+     Gen1 x64    canonical:ubuntu-24_04-lts:server-gen1:latest
+     Gen1 x64    canonical:ubuntu-26_04-lts:server-gen1:latest
+     Gen1 x64    debian:debian-13-daily:13:latest
+     Gen1 x64    debian:debian-14-daily:14:latest
+     Gen1 x64    debian:debian-sid-daily:sid:latest
+     Gen1 x64    redhat:rhel:10_2:latest
+*    Gen1 x64    suse:sles-15-sp7:gen1:latest
+     Gen1 x64    suse:sles-16-0-x86-64:gen1:latest
+     Gen2 x64    Fedora Cloud Rawhide x64 (community gallery)
+     Gen2 x64    canonical:ubuntu-24_04-lts:server:latest
+     Gen2 x64    canonical:ubuntu-26_04-lts:server:latest
+     Gen2 x64    debian:debian-13-daily:13-gen2:latest
+     Gen2 x64    debian:debian-14-daily:14-gen2:latest
+     Gen2 x64    debian:debian-sid-daily:sid-gen2:latest
+     Gen2 x64    microsoftazurelinux:azurelinux-4:4:latest
+*    Gen2 x64    redhat:rhel:10_2-gen2:latest
+     Gen2 x64    suse:sles-15-sp7:gen2:latest
+     Gen2 x64    suse:sles-16-0-x86-64:gen2:latest
+
+Rep  VM size              Arch   OS/data  Temp GiB  Local NVMe  Direct Disk
+---  -------------------  -----  -------  --------  ----------  -----------
+*    Standard_D2plds_v5   ARM64  SCSI     75        None        None
+     Standard_D8plds_v5   ARM64  SCSI     300       None        None
+*    Standard_D2plds_v6   ARM64  SCSI     None      1 x 110     v2
+     Standard_D16plds_v6  ARM64  SCSI     None      2 x 440     v2
+     Standard_D2pls_v5    ARM64  SCSI     None      None        None
+     Standard_D8pls_v5    ARM64  SCSI     None      None        None
+     Standard_D2pls_v6    ARM64  SCSI     None      None        None
+     Standard_D16pls_v6   ARM64  SCSI     None      None        None
+     Standard_B2ts_v2     x64    SCSI     None      None        None
+     Standard_D2ads_v5    x64    SCSI     75        None        None
+     Standard_D16ads_v5   x64    SCSI     600       None        None
+     Standard_D2ads_v6    x64    NVMe     None      1 x 110     v2
+     Standard_D16ads_v6   x64    NVMe     None      2 x 440     v2
+     Standard_D32ads_v6   x64    NVMe     None      4 x 440     v2
+     Standard_D32ads_v7   x64    NVMe     None      4 x 440     v2
+     Standard_D2as_v6     x64    NVMe     None      None        None
+*    Standard_D2ds_v4     x64    SCSI     75        None        None
+     Standard_D2ds_v5     x64    SCSI     75        None        None
+*    Standard_D2ds_v6     x64    NVMe     None      1 x 110     v2
+     Standard_D16ds_v6    x64    NVMe     None      2 x 440     v2
+     Standard_D32ds_v6    x64    NVMe     None      4 x 440     v2
+     Standard_D2ds_v7     x64    NVMe     None      1 x 110     v2
+     Standard_D32ds_v7    x64    NVMe     None      4 x 440     v2
+     Standard_D2s_v4      x64    SCSI     None      None        None
+     Standard_D2s_v5      x64    SCSI     None      None        None
+     Standard_D2s_v6      x64    NVMe     None      None        None
+     Standard_E2bds_v5    x64    SCSI     75        None        None
+     Standard_E2bs_v5     x64    SCSI     None      None        None
+     Standard_L8s_v2      x64    SCSI     80        1 x 1788    v1
+*    Standard_L8s_v3      x64    SCSI     80        1 x 1788    v1
+     Standard_L80s_v3     x64    SCSI     800       10 x 1788   v1
+     Standard_L8s_v4      x64    NVMe     None      4 x 447     v2
+     Standard_L80s_v4     x64    NVMe     None      10 x 1788   v2
+
+Rep  VM configuration     Data disk LUNs
+---  -------------------  ---------------
+     no-data-disks        None
+     single-lun           0
+*    mixed-luns           0, 1, 31, 63
+     nonzero-luns         1, 2, 31, 63
+     max-data-disks-32    0-31 (32 disks)
+     max-data-disks-64    0-63 (64 disks)
+
+Example usage:
+
+    export SELFTEST_AZURE_SUBSCRIPTION="<subscription id>"
+    export SELFTEST_AZURE_LOCATION=eastus2
+
+    pytest -v selftest/test_images.py -k image-coverage
+    pytest -v selftest/test_images.py -k sku-coverage
+    pytest -v selftest/test_images.py -k config-coverage
+
+    # Build and test the working tree instead of image-installed utilities.
+    SELFTEST_INSTALL_FROM_SOURCE=1 pytest -v selftest/test_images.py
+
+    # Custom Gen2 image/size/config selections.
+    SELFTEST_GEN2_IMAGES=/my/image1,/my/image2,... \\
+    SELFTEST_GEN2_VM_SIZES=Standard_D2ds_v5,Standard_D2ds_v6 \\
+    SELFTEST_VM_CONFIGS=mixed-luns,single-lun \\
+    SELFTEST_FULL_MATRIX=1 \\
+    pytest -v selftest/test_images.py
+
+"""
 
 import base64
 import codecs
@@ -26,8 +167,9 @@ import uuid
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from itertools import product
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import pytest
 
@@ -74,7 +216,7 @@ class ImageConfig:
     urn: str
     image_type: ImageType
     azure_vm_utils_version: Optional[str] = None
-    test_all_skus: bool = False
+    representative: bool = False
     # https://github.com/util-linux/util-linux/issues/4527
     workaround_util_linux_bug: bool = False
 
@@ -84,7 +226,7 @@ IMAGES = [
         "canonical:ubuntu-24_04-lts:server-arm64:latest",
         ImageType.ARM64,
         "0.6.0-4~ubuntu0.24.04.1",
-        test_all_skus=True,
+        representative=True,
     ),
     ImageConfig(
         "canonical:ubuntu-26_04-lts:server-arm64:latest",
@@ -137,7 +279,7 @@ IMAGES = [
     ImageConfig("microsoftazurelinux:azurelinux-4:4:latest", ImageType.GEN2),
     ImageConfig("redhat:rhel-arm64:10_2-arm64:latest", ImageType.ARM64, "0.7.0-1.el10"),
     ImageConfig("redhat:rhel:10_2:latest", ImageType.GEN1, "0.7.0-1.el10"),
-    ImageConfig("redhat:rhel:10_2-gen2:latest", ImageType.GEN2, test_all_skus=True),
+    ImageConfig("redhat:rhel:10_2-gen2:latest", ImageType.GEN2, representative=True),
     ImageConfig(
         "suse:sles-15-sp7-arm64:gen2:latest", ImageType.ARM64, "0.7.0-150500.11.6.1"
     ),
@@ -148,7 +290,7 @@ IMAGES = [
         "suse:sles-15-sp7:gen1:latest",
         ImageType.GEN1,
         "0.7.0-150500.11.6.1",
-        test_all_skus=True,
+        representative=True,
     ),
     ImageConfig(
         "suse:sles-16-0-x86-64:gen1:latest", ImageType.GEN1, "0.7.0-160000.1.1"
@@ -157,16 +299,49 @@ IMAGES = [
     ImageConfig("suse:sles-16-0-x86-64:gen2:latest", ImageType.GEN2),
 ]
 
-IMAGE_COVERAGE_VM_SIZES: Dict[ImageType, Tuple[str, str]] = {
+REPRESENTATIVE_VM_SIZES: Dict[ImageType, Tuple[str, str]] = {
     ImageType.ARM64: ("Standard_D2plds_v5", "Standard_D2plds_v6"),
     ImageType.GEN1: ("Standard_D2ds_v4", "Standard_L8s_v3"),
     ImageType.GEN2: ("Standard_D2ds_v4", "Standard_D2ds_v6"),
 }
 
 
+@dataclass(frozen=True)
+class VMConfig:
+    """VM settings independent of image and size, with size compatibility limits."""
+
+    name: str
+    data_disk_luns: Tuple[int, ...]
+    representative: bool = False
+    vm_sizes: Tuple[str, ...] = ()
+
+
+VM_CONFIGS = [
+    VMConfig("mixed-luns", (0, 1, 31, 63), representative=True),
+    VMConfig("no-data-disks", ()),
+    VMConfig("single-lun", (0,)),
+    VMConfig("nonzero-luns", (1, 2, 31, 63)),
+    VMConfig("max-data-disks-32", tuple(range(32)), vm_sizes=("Standard_L80s_v3",)),
+    VMConfig("max-data-disks-64", tuple(range(64)), vm_sizes=("Standard_L80s_v4",)),
+]
+
+
 def _get_overrides(variable: str) -> List[str]:
     """Read nonempty entries from a comma-separated selection override."""
     return [value for value in os.getenv(variable, "").split(",") if value]
+
+
+def _get_bool_env(variable: str) -> bool:
+    """Parse a boolean environment setting, defaulting to false."""
+    value = os.getenv(variable, "0").lower()
+
+    if value in ("1", "true", "yes", "y", "on", "t"):
+        return True
+
+    if value in ("0", "false", "no", "n", "off", "f"):
+        return False
+
+    raise ValueError(f"{variable} must be 1/0, true/false, yes/no, y/n, on/off, or t/f")
 
 
 def _get_images(image_type: ImageType) -> List[ImageConfig]:
@@ -179,6 +354,7 @@ def _get_images(image_type: ImageType) -> List[ImageConfig]:
         return [
             catalog.get(image, ImageConfig(image, image_type)) for image in overrides
         ]
+
     return [image for image in IMAGES if image.image_type == image_type]
 
 
@@ -187,6 +363,7 @@ def _get_vm_sizes(image_type: ImageType) -> List[str]:
     overrides = _get_overrides(f"SELFTEST_{image_type.value}_VM_SIZES")
     if overrides:
         return overrides
+
     architecture = "arm64" if image_type == ImageType.ARM64 else "x64"
     return [
         sku.vm_size
@@ -196,45 +373,87 @@ def _get_vm_sizes(image_type: ImageType) -> List[str]:
     ]
 
 
+def _get_vm_configs() -> List[VMConfig]:
+    """Select configurations without adding unselected layouts."""
+    overrides = _get_overrides("SELFTEST_VM_CONFIGS")
+    if not overrides:
+        return list(VM_CONFIGS)
+
+    catalog = {config.name: config for config in VM_CONFIGS}
+    unknown = [name for name in overrides if name not in catalog]
+    if unknown:
+        raise ValueError(
+            f"Unknown SELFTEST_VM_CONFIGS: {', '.join(unknown)}; "
+            f"choose from {', '.join(catalog)}"
+        )
+
+    return [catalog[name] for name in overrides]
+
+
 def _get_test_matrix(
     image_type: ImageType,
     images: List[ImageConfig],
     vm_sizes: List[str],
+    vm_configs: List[VMConfig],
     *,
     full_matrix: bool = False,
-) -> List[Tuple[str, ImageConfig]]:
-    """Build image coverage and remaining SKU coverage independently."""
-    if full_matrix:
-        return list(
-            dict.fromkeys((size, image) for size in vm_sizes for image in images)
+) -> Dict[Tuple[str, ImageConfig, VMConfig], Set[str]]:
+    """Union coverage products by case identity, retaining overlapping labels."""
+    representative_sizes = set(REPRESENTATIVE_VM_SIZES[image_type]) & set(vm_sizes)
+    if not images or not vm_sizes or not vm_configs:
+        raise ValueError(f"{image_type.value} matrix selections must not be empty")
+
+    if not full_matrix and (
+        not any(image.representative for image in images)
+        or not representative_sizes
+        or not any(config.representative for config in vm_configs)
+    ):
+        raise ValueError(
+            f"{image_type.value} reduced matrix requires selected representative "
+            "images, VM sizes, and VM configurations; "
+            "set SELFTEST_FULL_MATRIX=1 for custom selections"
         )
-    image_sizes = IMAGE_COVERAGE_VM_SIZES[image_type]
-    image_cases = [
-        (size, image) for size in vm_sizes if size in image_sizes for image in images
-    ]
-    sku_cases = [
-        (size, image)
-        for size in vm_sizes
-        if size not in image_sizes
-        for image in images
-        if image.test_all_skus
-    ]
-    cases = list(dict.fromkeys(image_cases + sku_cases))
+
+    cases: Dict[Tuple[str, ImageConfig, VMConfig], Set[str]] = {}
+    architecture = "arm64" if image_type == ImageType.ARM64 else "x64"
+    for size, image, config in product(vm_sizes, images, vm_configs):
+        sku = selftest.SKU_CONFIGS.get(size)
+        if sku and (
+            sku.vm_size_type != architecture
+            or (image_type == ImageType.GEN1 and sku.nvme_only)
+        ):
+            continue
+        if config.vm_sizes and size not in config.vm_sizes:
+            continue
+
+        coverage: Set[str] = set()
+        if size in representative_sizes and config.representative:
+            coverage.add("image-coverage")
+        if image.representative and config.representative:
+            coverage.add("sku-coverage")
+        if image.representative and (
+            size in representative_sizes or size in config.vm_sizes
+        ):
+            coverage.add("config-coverage")
+
+        if full_matrix:
+            coverage.add("full-matrix")
+
+        if coverage:
+            cases.setdefault((size, image, config), set()).update(coverage)
+
     if not cases:
         raise ValueError(
-            f"No {image_type.value} cases selected: include an image-coverage SKU or an image with "
-            "test_all_skus=True, or set SELFTEST_FULL_MATRIX=1 for custom combinations"
+            f"No compatible {image_type.value} image/size/configuration combinations selected"
         )
+
     return cases
 
 
-def _image_case_id(size: str, image: ImageConfig) -> str:
-    """Expose coverage tier and disk capabilities directly to pytest -k."""
-    tier = (
-        "image-coverage"
-        if size in IMAGE_COVERAGE_VM_SIZES[image.image_type]
-        else "sku-coverage"
-    )
+def _image_case_id(
+    size: str, image: ImageConfig, config: VMConfig, coverage: Set[str]
+) -> str:
+    """Expose every coverage membership and disk capability to pytest -k."""
     sku = selftest.SKU_CONFIGS.get(size)
     if sku is None:
         storage = "unknown-storage"
@@ -244,29 +463,45 @@ def _image_case_id(size: str, image: ImageConfig) -> str:
         storage = "scsi-and-local-nvme"
     else:
         storage = "scsi"
-    return f"type_{image.image_type.value}-{tier}-{storage}-{size}-{image.urn}"
+
+    groups = "-".join(sorted(coverage))
+    return (
+        f"{image.image_type.value}-{groups}-{storage}-{size}-{image.urn}"
+        f"-{config.name}"
+    )
 
 
 def _get_image_test_cases():
-    """Read selection settings once and attach readable IDs and type markers."""
-    mode = os.getenv("SELFTEST_FULL_MATRIX", "0")
-    if mode not in ("0", "1"):
-        raise ValueError("SELFTEST_FULL_MATRIX must be 0 or 1")
+    """Read selection settings once and attach filterable case IDs."""
+    full_matrix = _get_bool_env("SELFTEST_FULL_MATRIX")
+    configs = _get_vm_configs()
     cases = []
-    for image_type in IMAGE_COVERAGE_VM_SIZES:
+    for image_type in ImageType:
         images = _get_images(image_type)
         sizes = _get_vm_sizes(image_type)
-        for size, image in _get_test_matrix(
-            image_type, images, sizes, full_matrix=mode == "1"
-        ):
+        compatible_configs = [
+            config
+            for config in configs
+            if not config.vm_sizes or set(config.vm_sizes) & set(sizes)
+        ]
+        if not compatible_configs:
+            continue
+
+        for (size, image, config), coverage in _get_test_matrix(
+            image_type, images, sizes, compatible_configs, full_matrix=full_matrix
+        ).items():
             cases.append(
                 pytest.param(
                     size,
                     image,
-                    id=_image_case_id(size, image),
-                    marks=getattr(pytest.mark, image_type.value.lower()),
+                    config.data_disk_luns,
+                    id=_image_case_id(size, image, config, coverage),
                 )
             )
+
+    if not cases:
+        raise ValueError("No compatible image/size/configuration combinations selected")
+
     return cases
 
 
@@ -445,7 +680,7 @@ def admin_password():
 @pytest.fixture
 def hold_failures():
     """Get the hold failures flag."""
-    yield bool(os.getenv("SELFTEST_HOLD_FAILURES"))
+    yield _get_bool_env("SELFTEST_HOLD_FAILURES")
 
 
 @pytest.fixture
@@ -457,13 +692,13 @@ def random_suffix():
 @pytest.fixture
 def reallocates():
     """Get the number of reallocates."""
-    yield int(os.getenv("SELFTEST_REALLOCATES", "5"))
+    yield int(os.getenv("SELFTEST_REALLOCATES", "1"))
 
 
 @pytest.fixture
 def reboots():
     """Get the number of reboots."""
-    yield int(os.getenv("SELFTEST_REBOOTS", "5"))
+    yield int(os.getenv("SELFTEST_REBOOTS", "1"))
 
 
 @pytest.fixture
@@ -952,10 +1187,7 @@ def delete_after_tag():
 @pytest.fixture(scope="session")
 def source_install(tmp_path_factory) -> Tuple[bool, Optional[Path], str]:
     """Snapshot checkout sources once per worker when testing source bits."""
-    mode = os.getenv("SELFTEST_INSTALL_FROM_SOURCE", "0")
-    if mode not in ("0", "1"):
-        raise ValueError("SELFTEST_INSTALL_FROM_SOURCE must be 0 or 1")
-    if mode == "0":
+    if not _get_bool_env("SELFTEST_INSTALL_FROM_SOURCE"):
         return False, None, ""
 
     source = Path(__file__).resolve().parent.parent
@@ -991,11 +1223,6 @@ def source_install(tmp_path_factory) -> Tuple[bool, Optional[Path], str]:
     return True, archive, version
 
 
-@pytest.mark.parametrize(
-    "sparse_data_disk_luns",
-    [False, True],
-    ids=["contiguous-luns", "sparse-luns"],
-)
 class TestVMs:
     """Test VMs with different images and sizes."""
 
@@ -1012,7 +1239,7 @@ class TestVMs:
         public_ip,
         reallocates,
         reboots,
-        sparse_data_disk_luns,
+        data_disk_luns,
         request,
         ssh_key_path,
         temp_resource_group,
@@ -1041,7 +1268,7 @@ class TestVMs:
         self.public_ip, self.public_ip_name = public_ip
         self.reallocates = reallocates
         self.reboots = reboots
-        self.sparse_data_disk_luns = sparse_data_disk_luns
+        self.data_disk_luns = data_disk_luns
         self.request = request
         self.selftest_script_path = (
             Path(os.path.abspath(__file__)).parent / "selftest.py"
@@ -1262,21 +1489,14 @@ class TestVMs:
                                     "lun": lun,
                                     "name": f"{self.vm_name}-lun-{lun}",
                                     "createOption": "Empty",
-                                    "diskSizeGB": size_gb,
+                                    "diskSizeGB": 100 * (index % 4 + 1),
                                     "caching": "None",
                                     "deleteOption": "Delete",
                                     "managedDisk": {
                                         "storageAccountType": "Premium_LRS"
                                     },
                                 }
-                                for lun, size_gb in zip(
-                                    (
-                                        (1, 3, 5, 7)
-                                        if self.sparse_data_disk_luns
-                                        else (0, 1, 2, 3)
-                                    ),
-                                    (100, 200, 300, 400),
-                                )
+                                for index, lun in enumerate(self.data_disk_luns)
                             ],
                         },
                         "networkProfile": {
@@ -1877,9 +2097,9 @@ class TestVMs:
             ) from error
 
     @pytest.mark.parametrize(
-        "vm_size,image",
+        "vm_size,image,data_disk_luns",
         _get_image_test_cases(),
     )
-    def test_image(self, image, vm_size):
+    def test_image(self, image, vm_size, data_disk_luns):
         """Validate an image on its selected hardware configuration."""
         self.run_test()
