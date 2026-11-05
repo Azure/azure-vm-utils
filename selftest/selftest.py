@@ -6,6 +6,7 @@
 # --------------------------------------------------------------------------
 
 """Azure VM utilities self-tests script."""
+
 import argparse
 import glob
 import json
@@ -20,7 +21,7 @@ import urllib.request
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 
 logger = logging.getLogger("selftest")
 
@@ -37,6 +38,20 @@ AZURE_EPHEMERAL_DISK_SETUP_CONF = "/etc/azure-ephemeral-disk-setup.conf"
 AZURE_EPHEMERAL_DISK_SETUP_SERVICE = "azure-ephemeral-disk-setup.service"
 DEV_DISK_AZURE_RESOURCE = "/dev/disk/azure/resource"
 DEV_DISK_CLOUD_AZURE_RESOURCE = "/dev/disk/cloud/azure_resource"
+
+# Global state.
+AZURE_VM_UTILS_VERSION: str = ""
+AZURE_VM_UTILS_VERSION_TUPLE: Optional[Tuple[int, int, int]] = None
+COMPAT_CHECKS_ENABLED: bool = False
+
+
+def is_azure_vm_utils_compat(max_unsupported_version: Tuple[int, int, int]) -> bool:
+    """Check whether compatibility applies through max_unsupported_version."""
+    return (
+        COMPAT_CHECKS_ENABLED
+        and AZURE_VM_UTILS_VERSION_TUPLE is not None
+        and AZURE_VM_UTILS_VERSION_TUPLE <= max_unsupported_version
+    )
 
 
 def is_systemd_fixed_for_unmanaged_bug(systemd_version: str) -> bool:
@@ -130,6 +145,20 @@ SKU_CONFIGS = {
         nvme_local_disk_count=10,
         nvme_local_disk_size_gib=gb_to_gib(1920),
     ),
+    "Standard_L8s_v4": SkuConfig(
+        vm_size="Standard_L8s_v4",
+        nvme_only=True,
+        nvme_id_enabled_local=True,
+        nvme_local_disk_count=4,
+        nvme_local_disk_size_gib=gb_to_gib(480),
+    ),
+    "Standard_L80s_v4": SkuConfig(
+        vm_size="Standard_L80s_v4",
+        nvme_only=True,
+        nvme_id_enabled_local=True,
+        nvme_local_disk_count=10,
+        nvme_local_disk_size_gib=gb_to_gib(1920),
+    ),
     "Standard_E2bs_v5": SkuConfig(
         vm_size="Standard_E2bs_v5", nvme_controller_toggle_supported=True
     ),
@@ -167,6 +196,27 @@ SKU_CONFIGS = {
     ),
     "Standard_D32ads_v6": V6SkuConfig(
         vm_size="Standard_D32ads_v6",
+        nvme_local_disk_count=4,
+        nvme_local_disk_size_gib=440,
+    ),
+    "Standard_D2ds_v7": SkuConfig(
+        vm_size="Standard_D2ds_v7",
+        nvme_only=True,
+        nvme_id_enabled_local=True,
+        nvme_local_disk_count=1,
+        nvme_local_disk_size_gib=110,
+    ),
+    "Standard_D32ds_v7": SkuConfig(
+        vm_size="Standard_D32ds_v7",
+        nvme_only=True,
+        nvme_id_enabled_local=True,
+        nvme_local_disk_count=4,
+        nvme_local_disk_size_gib=440,
+    ),
+    "Standard_D32ads_v7": SkuConfig(
+        vm_size="Standard_D32ads_v7",
+        nvme_only=True,
+        nvme_id_enabled_local=True,
         nvme_local_disk_count=4,
         nvme_local_disk_size_gib=440,
     ),
@@ -346,9 +396,6 @@ def get_remote_nvme_disks() -> List[str]:
         "MSFT NVMe Accelerator v1.0"
     )
 
-    assert (
-        len(remote_disk_controllers) <= 1
-    ), f"unexpected number of remote controllers {remote_disk_controllers}"
     return device_sort(
         [
             namespace
@@ -356,6 +403,16 @@ def get_remote_nvme_disks() -> List[str]:
             for namespace in get_nvme_namespace_devices(controller)
         ]
     )
+
+
+def get_nvme_namespace_id(device_name: str) -> int:
+    """Read namespace ID from sysfs for the given NVMe device."""
+    nsid = int(
+        Path(SYS_CLASS_BLOCK, device_name, "nsid").read_text(encoding="utf-8").strip()
+    )
+    if nsid <= 0:
+        raise ValueError(f"invalid namespace ID for {device_name}: {nsid}")
+    return nsid
 
 
 def get_nvme_controllers_with_model(model: str) -> List[str]:
@@ -527,12 +584,16 @@ class DiskInfo:
             ), f"local disk size mismatch: {nvme_local_disk_size_gib} != {local_disk_max_size} for {nvme_local_disks}"
 
         nvme_remote_disks = get_remote_nvme_disks()
-        if nvme_remote_disks:
-            nvme_remote_os_disk = nvme_remote_disks[0]
-            nvme_remote_data_disks = nvme_remote_disks[1:]
-        else:
-            nvme_remote_os_disk = None
-            nvme_remote_data_disks = []
+        nvme_remote_os_disks = [
+            disk for disk in nvme_remote_disks if get_nvme_namespace_id(disk) == 1
+        ]
+        assert (
+            len(nvme_remote_os_disks) <= 1
+        ), f"unexpected number of remote OS disks: {nvme_remote_os_disks}"
+        nvme_remote_os_disk = nvme_remote_os_disks[0] if nvme_remote_os_disks else None
+        nvme_remote_data_disks = [
+            disk for disk in nvme_remote_disks if disk != nvme_remote_os_disk
+        ]
 
         root_device = get_root_block_device()
         root_device_is_nvme = root_device.startswith("/dev/nvme")
@@ -910,6 +971,7 @@ class AzureNvmeIdDevice:
     lun: Optional[int]
     name: Optional[str]
     extra: Dict[str, str]
+    nsid: Optional[int] = None
 
 
 @dataclass(repr=True)
@@ -981,16 +1043,15 @@ class AzureNvmeIdInfo:
             ), f"missing azure-nvme-id for {device_name}"
             disk_cfg = azure_nvme_id_disks.get(device_name)
             assert disk_cfg, f"failed to find azure-nvme-id for {device_name}"
-            assert disk_cfg.type in (
-                "os",
-                "data",
-            ), f"unexpected remote disk type {disk_cfg}"
-            if disk_cfg.type == "data":
-                assert (
-                    disk_cfg.lun is not None and disk_cfg.lun >= 0
-                ), f"unexpected remote disk index {disk_cfg}"
-            else:
-                assert disk_cfg.lun is None, f"unexpected remote disk index {disk_cfg}"
+            nsid = get_nvme_namespace_id(device_name)
+            expected_type = "os" if nsid == 1 else "data"
+            expected_lun = None if nsid == 1 else nsid - 2
+            assert (
+                disk_cfg.type == expected_type
+            ), f"unexpected remote disk type for namespace ID {nsid}: {disk_cfg}"
+            assert (
+                disk_cfg.lun == expected_lun
+            ), f"unexpected remote disk lun for namespace ID {nsid}: {disk_cfg}"
             assert not disk_cfg.name, f"unexpected remote disk name {disk_cfg}"
             assert disk_cfg.nvme_id, f"unexpected remote disk id {disk_cfg}"
             assert not disk_cfg.extra, f"unexpected remote disk extra {disk_cfg}"
@@ -1039,7 +1100,29 @@ class AzureNvmeIdInfo:
                 self.azure_nvme_id_json_stderr == ""
             ), f"unexpected azure-nvme-id stderr: {self.azure_nvme_id_json_stderr}"
 
-        self._validate_azure_nvme_disks(self.azure_nvme_id_disks, disk_info)
+        self._validate_azure_nvme_disks(self.azure_nvme_id_json_disks, disk_info)
+
+        ignore_nsid_for_compat = (
+            is_azure_vm_utils_compat((0, 7, 0))
+            and self.azure_nvme_id_json_disks
+            and not any(
+                "nsid" in device
+                for device in json.loads(self.azure_nvme_id_json_stdout)
+            )
+        )
+        if ignore_nsid_for_compat:
+            logger.info(
+                "azure-nvme-id %s omits JSON namespace IDs; "
+                "allowing legacy output while retaining disk identity and LUN checks",
+                self.azure_nvme_id_version,
+            )
+        else:
+            for device_name, disk in self.azure_nvme_id_json_disks.items():
+                expected_nsid = get_nvme_namespace_id(device_name)
+                assert disk.nsid == expected_nsid, (
+                    f"unexpected namespace ID for {device_name}: "
+                    f"{disk.nsid!r} != {expected_nsid}"
+                )
 
         assert all(
             disk.model
@@ -1096,6 +1179,19 @@ class AzureNvmeIdInfo:
     @classmethod
     def gather(cls) -> "AzureNvmeIdInfo":
         """Gather Azure NVMe ID information."""
+        global AZURE_VM_UTILS_VERSION, AZURE_VM_UTILS_VERSION_TUPLE  # pylint: disable=global-statement
+
+        # Start with version check to populate global version information.
+        proc = subprocess.run(
+            ["azure-nvme-id", "--version"], capture_output=True, check=False
+        )
+        azure_nvme_id_version_stdout = proc.stdout.decode("utf-8")
+        azure_nvme_id_version_stderr = proc.stderr.decode("utf-8")
+        azure_nvme_id_version_returncode = proc.returncode
+        AZURE_VM_UTILS_VERSION, AZURE_VM_UTILS_VERSION_TUPLE = (
+            cls.parse_azure_nvme_id_version(azure_nvme_id_version_stdout)
+        )
+
         proc = subprocess.run(["azure-nvme-id"], capture_output=True, check=False)
         azure_nvme_id_stdout = proc.stdout.decode("utf-8")
         azure_nvme_id_stderr = proc.stderr.decode("utf-8")
@@ -1120,16 +1216,6 @@ class AzureNvmeIdInfo:
         azure_nvme_id_help_returncode = proc.returncode
 
         proc = subprocess.run(
-            ["azure-nvme-id", "--version"], capture_output=True, check=False
-        )
-        azure_nvme_id_version_stdout = proc.stdout.decode("utf-8")
-        azure_nvme_id_version_stderr = proc.stderr.decode("utf-8")
-        azure_nvme_id_version_returncode = proc.returncode
-        azure_nvme_id_version = cls.parse_azure_nvme_id_version(
-            azure_nvme_id_version_stdout
-        )
-
-        proc = subprocess.run(
             ["azure-nvme-id", "zzz"], capture_output=True, check=False
         )
         azure_nvme_id_zzz_stdout = proc.stdout.decode("utf-8")
@@ -1151,7 +1237,7 @@ class AzureNvmeIdInfo:
             azure_nvme_id_version_stdout=azure_nvme_id_version_stdout,
             azure_nvme_id_version_stderr=azure_nvme_id_version_stderr,
             azure_nvme_id_version_returncode=azure_nvme_id_version_returncode,
-            azure_nvme_id_version=azure_nvme_id_version,
+            azure_nvme_id_version=AZURE_VM_UTILS_VERSION,
             azure_nvme_id_zzz_returncode=azure_nvme_id_zzz_returncode,
             azure_nvme_id_zzz_stdout=azure_nvme_id_zzz_stdout,
             azure_nvme_id_zzz_stderr=azure_nvme_id_zzz_stderr,
@@ -1166,6 +1252,7 @@ class AzureNvmeIdInfo:
         [
             {
                 "path": "/dev/nvme0n33",
+                "nsid": 33,
                 "model": "MSFT NVMe Accelerator v1.0",
                 "properties": {
                     "type": "data",
@@ -1175,6 +1262,7 @@ class AzureNvmeIdInfo:
             },
             {
                 "path": "/dev/nvme1n1",
+                "nsid": 1,
                 "model": "Microsoft NVMe Direct Disk v2",
                 "properties": {
                     "type": "local",
@@ -1191,6 +1279,7 @@ class AzureNvmeIdInfo:
             device_path = device["path"]
             model = device["model"]
             properties = device["properties"]
+            nvme_id = ",".join(f"{k}={v}" for k, v in properties.items())
             device_type = properties.pop("type", None)
             device_index = (
                 int(properties.pop("index")) if "index" in properties else None
@@ -1200,7 +1289,8 @@ class AzureNvmeIdInfo:
             azure_nvme_id_device = AzureNvmeIdDevice(
                 device=device_path,
                 model=model,
-                nvme_id=",".join([f"{k}={v}" for k, v in properties.items()]),
+                nsid=device.get("nsid"),
+                nvme_id=nvme_id,
                 type=device_type,
                 index=device_index,
                 lun=device_lun,
@@ -1265,13 +1355,22 @@ class AzureNvmeIdInfo:
         return devices
 
     @staticmethod
-    def parse_azure_nvme_id_version(azure_nvme_id_version_output: str) -> str:
-        """Parse azure-nvme-id version output and return version info."""
-        parts = azure_nvme_id_version_output.strip().split(" ")
+    def parse_azure_nvme_id_version(
+        azure_nvme_id_version_output: str,
+    ) -> Tuple[str, Optional[Tuple[int, int, int]]]:
+        """Parse the full version and numeric release, including distro revisions."""
+        parts = azure_nvme_id_version_output.split()
         assert (
             len(parts) == 2
         ), f"unexpected azure-nvme-id version output: {azure_nvme_id_version_output}"
-        return parts[1]
+        version = parts[1]
+
+        match = re.match(r"v?(\d+)\.(\d+)\.(\d+)", version)
+        if match is None:
+            return version, None
+
+        major, minor, patch = match.groups()
+        return version, (int(major), int(minor), int(patch))
 
 
 @dataclass
@@ -1439,8 +1538,8 @@ class AzureVmUtilsValidator:
         skip_imds_validation: bool = False,
         skip_udev_validation: bool = False,
     ) -> None:
-        self.azure_ephemeral_disk_config = AzureEphemeralDiskConfig.gather()
         self.azure_nvme_id_info = AzureNvmeIdInfo.gather()
+        self.azure_ephemeral_disk_config = AzureEphemeralDiskConfig.gather()
         self.disk_info = DiskInfo.gather()
         self.mount_info = MountInfo.gather()
         self.net_info = NetworkInfo.gather()
@@ -1717,6 +1816,8 @@ class AzureVmUtilsValidator:
 
 def main() -> None:
     """Main entry point."""
+    global COMPAT_CHECKS_ENABLED  # pylint: disable=global-statement
+
     parser = argparse.ArgumentParser(
         description="Azure VM utilities self-tests script."
     )
@@ -1735,7 +1836,13 @@ def main() -> None:
         action="store_true",
         help="Skip udev validation (allow for running test without reboot after install)",
     )
+    parser.add_argument(
+        "--compat",
+        action="store_true",
+        help="Allow known version-specific compatibility behavior",
+    )
     args = parser.parse_args()
+    COMPAT_CHECKS_ENABLED = args.compat
 
     if args.debug:
         logging.basicConfig(format="[%(asctime)s] %(message)s", level=logging.DEBUG)

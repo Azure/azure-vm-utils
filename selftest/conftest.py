@@ -42,6 +42,16 @@ def pytest_configure(config):
     """
     artifacts_path = os.getenv("SELFTEST_ARTIFACTS_PATH")
     if "PYTEST_XDIST_WORKER" not in os.environ:
+        for name in (
+            "SELFTEST_AZURE_LOCATION",
+            "SELFTEST_HOLD_FAILURES",
+            "SELFTEST_INSTALL_FROM_SOURCE",
+            "SELFTEST_RESOURCE_GROUP",
+            "SELFTEST_PUBLIC_IP_TAGS",
+            "SELFTEST_REALLOCATES",
+            "SELFTEST_REBOOTS",
+        ):
+            print(f"{name}={os.getenv(name)}", file=sys.stderr)
         if not artifacts_path:
             timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
             artifacts_path = f"/tmp/selftest-{timestamp}"

@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 // clange-format off
@@ -43,10 +44,31 @@ static int capture_close(int fd)
     return real_close(fd);
 }
 
+pid_t capture_fork(void)
+{
+    assert_int_equal(fflush(NULL), 0);
+    pid_t child = fork();
+    assert_true(child >= 0);
+    return child;
+}
+
+void capture_wait(pid_t child, int expected_status)
+{
+    int status;
+    pid_t result;
+    do
+    {
+        result = waitpid(child, &status, 0);
+    } while (result == -1 && errno == EINTR);
+    assert_int_equal(result, child);
+    assert_true(WIFEXITED(status));
+    assert_int_equal(WEXITSTATUS(status), expected_status);
+}
+
 /**
  * Capture stdout and stderr using non-blocking pipes.
  */
-void capture_setup(void **state)
+int capture_setup(void **state)
 {
     (void)state; // Unused parameter
 
@@ -80,6 +102,7 @@ void capture_setup(void **state)
     // Set pipes to non-blocking mode
     fcntl(stdout_pipe[0], F_SETFL, O_NONBLOCK);
     fcntl(stderr_pipe[0], F_SETFL, O_NONBLOCK);
+    return 0;
 }
 
 /**
@@ -135,7 +158,7 @@ const char *capture_stderr()
 /**
  * Restore stdout and stderr after syncing final time.
  */
-void capture_teardown(void **state)
+int capture_teardown(void **state)
 {
     (void)state; // Unused parameter
 
@@ -169,4 +192,5 @@ void capture_teardown(void **state)
 
     fprintf(stderr, ">> TEST STDOUT: %s\n", capture_stdout_buffer);
     fprintf(stderr, ">> TEST STDERR: %s\n", capture_stderr_buffer);
+    return 0;
 }

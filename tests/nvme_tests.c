@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 // clange-format off
@@ -21,6 +22,9 @@
 // clange-format on
 
 #include "capture.h"
+#include "exit_code.h"
+#include "identify_disks.h"
+#include "identify_udev.h"
 #include "nvme.h"
 
 #define OPEN_FD 14
@@ -33,6 +37,22 @@ bool debug = false;
 struct nvme_id_ns empty_ns = {
     0,
 };
+
+char *__real_strndup(const char *value, size_t length);
+static bool fail_strndup;
+long __real_sysconf(int name);
+static bool fail_sysconf;
+
+long __wrap_sysconf(int name)
+{
+    if (fail_sysconf)
+    {
+        assert_int_equal(name, _SC_PAGESIZE);
+        errno = EINVAL;
+        return -1;
+    }
+    return __real_sysconf(name);
+}
 
 int __wrap_open(const char *pathname, int flags, ...)
 {
@@ -62,11 +82,7 @@ int __wrap_posix_memalign(void **memptr, size_t alignment, size_t size)
     check_expected(size);
 
     int ret = mock_type(int);
-    if (ret < 0)
-    {
-        errno = mock_type(int);
-    }
-    else if (ret == 0)
+    if (ret == 0)
     {
         *memptr = malloc(size);
     }
@@ -74,10 +90,30 @@ int __wrap_posix_memalign(void **memptr, size_t alignment, size_t size)
     return ret;
 }
 
+char *__wrap_strndup(const char *value, size_t length)
+{
+    if (fail_strndup)
+    {
+        errno = ENOMEM;
+        return NULL;
+    }
+    return __real_strndup(value, length);
+}
+
 int __wrap_ioctl(int fd, unsigned long request, ...)
 {
     check_expected(fd);
     check_expected(request);
+
+    if (request == NVME_IOCTL_ID)
+    {
+        int ret = mock_type(int);
+        if (ret < 0)
+        {
+            errno = mock_type(int);
+        }
+        return ret;
+    }
 
     va_list args;
     va_start(args, request);
@@ -114,6 +150,11 @@ int __wrap_ioctl(int fd, unsigned long request, ...)
  */
 int __wrap___ioctl_time64(int fd, unsigned long request, ...)
 {
+    if (request == NVME_IOCTL_ID)
+    {
+        return __wrap_ioctl(fd, request);
+    }
+
     va_list args;
     va_start(args, request);
     void *arg = va_arg(args, void *);
@@ -126,6 +167,36 @@ int __wrap_close(int fd)
 {
     check_expected(fd);
     return mock_type(int);
+}
+
+static void test_nvme_identify_namespace_command_failure(void **state)
+{
+    (void)state;
+
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, OPEN_PATH);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
+        expect_any(__wrap_posix_memalign, memptr);
+        expect_value(__wrap_posix_memalign, alignment, sysconf(_SC_PAGESIZE));
+        expect_value(__wrap_posix_memalign, size, sizeof(struct nvme_id_ns));
+        will_return(__wrap_posix_memalign, 0);
+        expect_value(__wrap_ioctl, fd, OPEN_FD);
+        expect_value(__wrap_ioctl, request, NVME_IOCTL_ADMIN_CMD);
+        will_return(__wrap_ioctl, NSID);
+        will_return(__wrap_ioctl, &empty_ns);
+        will_return(__wrap_ioctl, 0x182);
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
+
+        nvme_identify_namespace(OPEN_PATH, NSID);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NVME_IDENTIFY_NAMESPACE_STATUS);
+    assert_string_equal(capture_stdout(), "");
+    assert_string_equal(capture_stderr(), "failed NVME_IOCTL_ADMIN_CMD ioctl for /dev/nvme199n19: NVMe status 0x182\n");
 }
 
 static void test_nvme_identify_namespace_success(void **state)
@@ -153,6 +224,7 @@ static void test_nvme_identify_namespace_success(void **state)
     struct nvme_id_ns *result = nvme_identify_namespace(OPEN_PATH, NSID);
 
     assert_non_null(result);
+    free(result);
 
     assert_string_equal(capture_stdout(), "");
     assert_string_equal(capture_stderr(), "");
@@ -162,39 +234,62 @@ static void test_nvme_identify_namespace_failure_to_open(void **state)
 {
     (void)state; // Unused parameter
 
-    expect_string(__wrap_open, pathname, OPEN_PATH);
-    expect_value(__wrap_open, flags, O_RDONLY);
-    will_return(__wrap_open, -1);
-    will_return(__wrap_open, EOWNERDEAD);
-
-    struct nvme_id_ns *result = nvme_identify_namespace(OPEN_PATH, NSID);
-
-    assert_null(result);
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, OPEN_PATH);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, -1);
+        will_return(__wrap_open, EOWNERDEAD);
+        nvme_identify_namespace(OPEN_PATH, NSID);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NVME_DEVICE_OPEN);
 
     assert_string_equal(capture_stdout(), "");
     assert_string_equal(capture_stderr(), "failed to open /dev/nvme199n19: Owner died\n");
+}
+
+static void test_nvme_identify_namespace_failure_to_sysconf(void **state)
+{
+    (void)state;
+
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, OPEN_PATH);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
+        fail_sysconf = true;
+        nvme_identify_namespace(OPEN_PATH, NSID);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NVME_PAGE_SIZE);
+    assert_string_equal(capture_stdout(), "");
+    assert_string_equal(capture_stderr(), "failed sysconf: Invalid argument\n");
 }
 
 static void test_nvme_identify_namespace_failure_to_posix_memalign(void **state)
 {
     (void)state; // Unused parameter
 
-    expect_string(__wrap_open, pathname, OPEN_PATH);
-    expect_value(__wrap_open, flags, O_RDONLY);
-    will_return(__wrap_open, OPEN_FD);
-
-    expect_any(__wrap_posix_memalign, memptr);
-    expect_value(__wrap_posix_memalign, alignment, sysconf(_SC_PAGESIZE));
-    expect_value(__wrap_posix_memalign, size, sizeof(struct nvme_id_ns));
-    will_return(__wrap_posix_memalign, -1);
-    will_return(__wrap_posix_memalign, ENOLINK);
-
-    expect_value(__wrap_close, fd, OPEN_FD);
-    will_return(__wrap_close, 0);
-
-    struct nvme_id_ns *result = nvme_identify_namespace(OPEN_PATH, NSID);
-
-    assert_null(result);
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, OPEN_PATH);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
+        expect_any(__wrap_posix_memalign, memptr);
+        expect_value(__wrap_posix_memalign, alignment, sysconf(_SC_PAGESIZE));
+        expect_value(__wrap_posix_memalign, size, sizeof(struct nvme_id_ns));
+        will_return(__wrap_posix_memalign, ENOLINK);
+        errno = EINVAL;
+        nvme_identify_namespace(OPEN_PATH, NSID);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NO_MEMORY);
     assert_string_equal(capture_stdout(), "");
     assert_string_equal(capture_stderr(), "failed posix_memalign for /dev/nvme199n19: Link has been severed\n");
 }
@@ -203,32 +298,66 @@ static void test_nvme_identify_namespace_failure_to_ioctl(void **state)
 {
     (void)state; // Unused parameter
 
-    expect_string(__wrap_open, pathname, OPEN_PATH);
-    expect_value(__wrap_open, flags, O_RDONLY);
-    will_return(__wrap_open, OPEN_FD);
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, OPEN_PATH);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
 
-    expect_any(__wrap_posix_memalign, memptr);
-    expect_value(__wrap_posix_memalign, alignment, sysconf(_SC_PAGESIZE));
-    expect_value(__wrap_posix_memalign, size, sizeof(struct nvme_id_ns));
-    will_return(__wrap_posix_memalign, 0);
+        expect_any(__wrap_posix_memalign, memptr);
+        expect_value(__wrap_posix_memalign, alignment, sysconf(_SC_PAGESIZE));
+        expect_value(__wrap_posix_memalign, size, sizeof(struct nvme_id_ns));
+        will_return(__wrap_posix_memalign, 0);
 
-    expect_value(__wrap_ioctl, fd, OPEN_FD);
-    expect_value(__wrap_ioctl, request, NVME_IOCTL_ADMIN_CMD);
-    will_return(__wrap_ioctl, NSID);
-    will_return(__wrap_ioctl, NULL);
-    will_return(__wrap_ioctl, -1);
-    will_return(__wrap_ioctl, EUCLEAN);
+        expect_value(__wrap_ioctl, fd, OPEN_FD);
+        expect_value(__wrap_ioctl, request, NVME_IOCTL_ADMIN_CMD);
+        will_return(__wrap_ioctl, NSID);
+        will_return(__wrap_ioctl, NULL);
+        will_return(__wrap_ioctl, -1);
+        will_return(__wrap_ioctl, EUCLEAN);
 
-    expect_value(__wrap_close, fd, OPEN_FD);
-    will_return(__wrap_close, 0);
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
 
-    struct nvme_id_ns *result = nvme_identify_namespace(OPEN_PATH, NSID);
-
-    assert_null(result);
+        nvme_identify_namespace(OPEN_PATH, NSID);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NVME_IDENTIFY_NAMESPACE_IOCTL);
 
     assert_string_equal(capture_stdout(), "");
     assert_string_equal(capture_stderr(), "failed NVME_IOCTL_ADMIN_CMD ioctl for /dev/nvme199n19: "
                                           "Structure needs cleaning\n");
+}
+
+static void test_nvme_identify_namespace_vs_allocation_failure(void **state)
+{
+    (void)state;
+
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, OPEN_PATH);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
+        expect_any(__wrap_posix_memalign, memptr);
+        expect_value(__wrap_posix_memalign, alignment, sysconf(_SC_PAGESIZE));
+        expect_value(__wrap_posix_memalign, size, sizeof(struct nvme_id_ns));
+        will_return(__wrap_posix_memalign, 0);
+        expect_value(__wrap_ioctl, fd, OPEN_FD);
+        expect_value(__wrap_ioctl, request, NVME_IOCTL_ADMIN_CMD);
+        will_return(__wrap_ioctl, NSID);
+        will_return(__wrap_ioctl, &empty_ns);
+        will_return(__wrap_ioctl, 0);
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
+        fail_strndup = true;
+        nvme_identify_namespace_vs(OPEN_PATH, NSID);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NO_MEMORY);
+    assert_string_equal(capture_stdout(), "");
+    assert_string_equal(capture_stderr(), "strndup() failed: Cannot allocate memory\n");
 }
 
 static void test_nvme_identify_namespace_vs_success(void **state)
@@ -268,47 +397,89 @@ static void test_nvme_identify_namespace_vs_failure(void **state)
 {
     (void)state; // Unused parameter
 
-    expect_string(__wrap_open, pathname, OPEN_PATH);
-    expect_value(__wrap_open, flags, O_RDONLY);
-    will_return(__wrap_open, -1);
-    will_return(__wrap_open, EOWNERDEAD);
-
-    char *vs = nvme_identify_namespace_vs(OPEN_PATH, NSID);
-
-    assert_null(vs);
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, OPEN_PATH);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, -1);
+        will_return(__wrap_open, EOWNERDEAD);
+        nvme_identify_namespace_vs(OPEN_PATH, NSID);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NVME_DEVICE_OPEN);
 
     assert_string_equal(capture_stdout(), "");
-    assert_string_equal(capture_stderr(), "failed to open /dev/nvme199n19: Owner died\n"
-                                          "failed to identify namespace for device=/dev/nvme199n19\n");
+    assert_string_equal(capture_stderr(), "failed to open /dev/nvme199n19: Owner died\n");
 }
 
 static void test_get_nsid_from_namespace_device_path_success(void **state)
 {
     (void)state; // Unused parameter
 
-    assert_int_equal(get_nsid_from_namespace_device_path("/dev/nvme0n5"), 5);
-    assert_int_equal(get_nsid_from_namespace_device_path("/dev/nvme2n12"), 12);
-    assert_int_equal(get_nsid_from_namespace_device_path("/dev/nvme100n1"), 1);
-    assert_int_equal(get_nsid_from_namespace_device_path("/dev/nvme100000n1"), 1);
-    assert_int_equal(get_nsid_from_namespace_device_path("/dev/nvme55n999"), 999);
+    expect_string(__wrap_open, pathname, "/dev/nvme1n1");
+    expect_value(__wrap_open, flags, O_RDONLY);
+    will_return(__wrap_open, OPEN_FD);
+
+    expect_value(__wrap_ioctl, fd, OPEN_FD);
+    expect_value(__wrap_ioctl, request, NVME_IOCTL_ID);
+    will_return(__wrap_ioctl, 5);
+
+    expect_value(__wrap_close, fd, OPEN_FD);
+    will_return(__wrap_close, 0);
+
+    assert_int_equal(get_nsid_from_namespace_device_path("/dev/nvme1n1"), 5);
 
     assert_string_equal(capture_stdout(), "");
     assert_string_equal(capture_stderr(), "");
 }
 
-static void test_get_nsid_from_namespace_device_path_failure(void **state)
+static void test_get_nsid_from_namespace_device_path_open_failure(void **state)
 {
     (void)state; // Unused parameter
 
-    assert_int_equal(get_nsid_from_namespace_device_path("bad"), -1);
-    assert_int_equal(get_nsid_from_namespace_device_path("bad1n1"), -1);
-    assert_int_equal(get_nsid_from_namespace_device_path("/dev/bad1n1"), -1);
-    assert_int_equal(get_nsid_from_namespace_device_path("/dev/nvme0"), -1);
-    assert_int_equal(get_nsid_from_namespace_device_path("/dev/nvme0n"), -1);
-    assert_int_equal(get_nsid_from_namespace_device_path("/dev/nvme0nX"), -1);
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, OPEN_PATH);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, -1);
+        will_return(__wrap_open, ENOENT);
+        get_nsid_from_namespace_device_path(OPEN_PATH);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NVME_DEVICE_OPEN);
 
     assert_string_equal(capture_stdout(), "");
-    assert_string_equal(capture_stderr(), "");
+    assert_string_equal(capture_stderr(), "failed to open /dev/nvme199n19: No such file or directory\n");
+}
+
+static void test_get_nsid_from_namespace_device_path_ioctl_failure(void **state)
+{
+    (void)state;
+
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, OPEN_PATH);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
+
+        expect_value(__wrap_ioctl, fd, OPEN_FD);
+        expect_value(__wrap_ioctl, request, NVME_IOCTL_ID);
+        will_return(__wrap_ioctl, -1);
+        will_return(__wrap_ioctl, ENOTTY);
+
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
+
+        get_nsid_from_namespace_device_path(OPEN_PATH);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NVME_NAMESPACE_ID_IOCTL);
+    assert_string_equal(capture_stdout(), "");
+    assert_string_equal(capture_stderr(),
+                        "failed NVME_IOCTL_ID ioctl for /dev/nvme199n19: Inappropriate ioctl for device\n");
 }
 
 static void test_nvme_identify_namespace_vs_for_namespace_device_success(void **state)
@@ -322,6 +493,17 @@ static void test_nvme_identify_namespace_vs_for_namespace_device_success(void **
     expect_value(__wrap_open, flags, O_RDONLY);
     will_return(__wrap_open, OPEN_FD);
 
+    expect_value(__wrap_ioctl, fd, OPEN_FD);
+    expect_value(__wrap_ioctl, request, NVME_IOCTL_ID);
+    will_return(__wrap_ioctl, 7);
+
+    expect_value(__wrap_close, fd, OPEN_FD);
+    will_return(__wrap_close, 0);
+
+    expect_string(__wrap_open, pathname, path);
+    expect_value(__wrap_open, flags, O_RDONLY);
+    will_return(__wrap_open, OPEN_FD);
+
     expect_any(__wrap_posix_memalign, memptr);
     expect_value(__wrap_posix_memalign, alignment, sysconf(_SC_PAGESIZE));
     expect_value(__wrap_posix_memalign, size, sizeof(struct nvme_id_ns));
@@ -329,7 +511,7 @@ static void test_nvme_identify_namespace_vs_for_namespace_device_success(void **
 
     expect_value(__wrap_ioctl, fd, OPEN_FD);
     expect_value(__wrap_ioctl, request, NVME_IOCTL_ADMIN_CMD);
-    will_return(__wrap_ioctl, 5);
+    will_return(__wrap_ioctl, 7);
     struct nvme_id_ns ns = {.vs = "key1=value1,key2=value2"};
     will_return(__wrap_ioctl, &ns);
     will_return(__wrap_ioctl, 0);
@@ -341,6 +523,7 @@ static void test_nvme_identify_namespace_vs_for_namespace_device_success(void **
 
     assert_non_null(result);
     assert_string_equal(result, vendor_specific_data);
+    free(result);
 
     assert_string_equal(capture_stdout(), "");
     assert_string_equal(capture_stderr(), "");
@@ -350,13 +533,30 @@ static void test_nvme_identify_namespace_vs_for_namespace_device_nsid_failure(vo
 {
     (void)state; // Unused parameter
 
-    const char *path = "/dev/nvme0nX";
+    const char *path = "/dev/nvme0n5";
 
-    char *result = nvme_identify_namespace_vs_for_namespace_device(path);
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, path);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
 
-    assert_null(result);
+        expect_value(__wrap_ioctl, fd, OPEN_FD);
+        expect_value(__wrap_ioctl, request, NVME_IOCTL_ID);
+        will_return(__wrap_ioctl, -1);
+        will_return(__wrap_ioctl, ENOTTY);
+
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
+
+        nvme_identify_namespace_vs_for_namespace_device(path);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NVME_NAMESPACE_ID_IOCTL);
     assert_string_equal(capture_stdout(), "");
-    assert_string_equal(capture_stderr(), "failed to parse namespace id: /dev/nvme0nX\n");
+    assert_string_equal(capture_stderr(),
+                        "failed NVME_IOCTL_ID ioctl for /dev/nvme0n5: Inappropriate ioctl for device\n");
 }
 
 static void test_nvme_identify_namespace_vs_for_namespace_device_vs_failure(void **state)
@@ -365,23 +565,190 @@ static void test_nvme_identify_namespace_vs_for_namespace_device_vs_failure(void
 
     const char *path = "/dev/nvme0n5";
 
-    expect_string(__wrap_open, pathname, path);
-    expect_value(__wrap_open, flags, O_RDONLY);
-    will_return(__wrap_open, -1);
-    will_return(__wrap_open, EOWNERDEAD);
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, path);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
 
-    char *result = nvme_identify_namespace_vs_for_namespace_device(path);
+        expect_value(__wrap_ioctl, fd, OPEN_FD);
+        expect_value(__wrap_ioctl, request, NVME_IOCTL_ID);
+        will_return(__wrap_ioctl, 7);
 
-    assert_null(result);
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
+
+        expect_string(__wrap_open, pathname, path);
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, -1);
+        will_return(__wrap_open, EOWNERDEAD);
+
+        nvme_identify_namespace_vs_for_namespace_device(path);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NVME_DEVICE_OPEN);
     assert_string_equal(capture_stdout(), "");
-    assert_string_equal(capture_stderr(), "failed to open /dev/nvme0n5: Owner died\n"
-                                          "failed to identify namespace for device=/dev/nvme0n5\n");
+    assert_string_equal(capture_stderr(), "failed to open /dev/nvme0n5: Owner died\n");
+}
+
+static void test_identify_udev_device_vs_failure(void **state)
+{
+    (void)state;
+
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        assert_int_equal(setenv("DEVNAME", "/dev/nvme0n5", 1), 0);
+        expect_string(__wrap_open, pathname, "/dev/nvme0n5");
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
+        expect_value(__wrap_ioctl, fd, OPEN_FD);
+        expect_value(__wrap_ioctl, request, NVME_IOCTL_ID);
+        will_return(__wrap_ioctl, NSID);
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
+
+        expect_string(__wrap_open, pathname, "/dev/nvme0n5");
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
+        expect_any(__wrap_posix_memalign, memptr);
+        expect_value(__wrap_posix_memalign, alignment, sysconf(_SC_PAGESIZE));
+        expect_value(__wrap_posix_memalign, size, sizeof(struct nvme_id_ns));
+        will_return(__wrap_posix_memalign, 0);
+        expect_value(__wrap_ioctl, fd, OPEN_FD);
+        expect_value(__wrap_ioctl, request, NVME_IOCTL_ADMIN_CMD);
+        will_return(__wrap_ioctl, NSID);
+        will_return(__wrap_ioctl, NULL);
+        will_return(__wrap_ioctl, -1);
+        will_return(__wrap_ioctl, EUCLEAN);
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
+
+        identify_udev_device();
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NVME_IDENTIFY_NAMESPACE_IOCTL);
+    assert_string_equal(capture_stdout(), "");
+    assert_string_equal(capture_stderr(),
+                        "failed NVME_IOCTL_ADMIN_CMD ioctl for /dev/nvme0n5: Structure needs cleaning\n");
+}
+
+static void test_enumerate_namespaces_nsid_failure(void **state)
+{
+    (void)state;
+
+    char template[] = "/tmp/nvme_test_XXXXXX";
+    char *controller_path = mkdtemp(template);
+    assert_non_null(controller_path);
+
+    char first_namespace[MAX_PATH];
+    char second_namespace[MAX_PATH];
+    snprintf(first_namespace, sizeof(first_namespace), "%s/nvme0n1", controller_path);
+    snprintf(second_namespace, sizeof(second_namespace), "%s/nvme0n2", controller_path);
+    assert_int_equal(mkdir(first_namespace, 0700), 0);
+    assert_int_equal(mkdir(second_namespace, 0700), 0);
+
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, "/dev/nvme0n1");
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
+        expect_value(__wrap_ioctl, fd, OPEN_FD);
+        expect_value(__wrap_ioctl, request, NVME_IOCTL_ID);
+        will_return(__wrap_ioctl, -1);
+        will_return(__wrap_ioctl, ENOTTY);
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
+
+        struct nvme_controller ctrl = {0};
+        snprintf(ctrl.name, sizeof(ctrl.name), "nvme0");
+        snprintf(ctrl.sys_path, sizeof(ctrl.sys_path), "%s", controller_path);
+        struct context ctx = {.output_format = PLAIN};
+        json_object *namespaces = json_object_new_array();
+        assert_non_null(namespaces);
+        enumerate_namespaces_for_controller(&ctrl, &ctx, namespaces);
+        json_object_put(namespaces);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NVME_NAMESPACE_ID_IOCTL);
+    assert_int_equal(rmdir(first_namespace), 0);
+    assert_int_equal(rmdir(second_namespace), 0);
+    assert_int_equal(rmdir(controller_path), 0);
+    assert_string_equal(capture_stdout(), "");
+    assert_string_equal(capture_stderr(),
+                        "failed NVME_IOCTL_ID ioctl for /dev/nvme0n1: Inappropriate ioctl for device\n");
+}
+
+static void test_enumerate_namespaces_vs_failure(void **state)
+{
+    (void)state;
+
+    char template[] = "/tmp/nvme_test_XXXXXX";
+    char *controller_path = mkdtemp(template);
+    assert_non_null(controller_path);
+
+    char first_namespace[MAX_PATH];
+    char second_namespace[MAX_PATH];
+    snprintf(first_namespace, sizeof(first_namespace), "%s/nvme0n1", controller_path);
+    snprintf(second_namespace, sizeof(second_namespace), "%s/nvme0n2", controller_path);
+    assert_int_equal(mkdir(first_namespace, 0700), 0);
+    assert_int_equal(mkdir(second_namespace, 0700), 0);
+
+    pid_t child = capture_fork();
+    if (child == 0)
+    {
+        expect_string(__wrap_open, pathname, "/dev/nvme0n1");
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
+        expect_value(__wrap_ioctl, fd, OPEN_FD);
+        expect_value(__wrap_ioctl, request, NVME_IOCTL_ID);
+        will_return(__wrap_ioctl, NSID);
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
+
+        expect_string(__wrap_open, pathname, "/dev/nvme0n1");
+        expect_value(__wrap_open, flags, O_RDONLY);
+        will_return(__wrap_open, OPEN_FD);
+        expect_any(__wrap_posix_memalign, memptr);
+        expect_value(__wrap_posix_memalign, alignment, sysconf(_SC_PAGESIZE));
+        expect_value(__wrap_posix_memalign, size, sizeof(struct nvme_id_ns));
+        will_return(__wrap_posix_memalign, 0);
+        expect_value(__wrap_ioctl, fd, OPEN_FD);
+        expect_value(__wrap_ioctl, request, NVME_IOCTL_ADMIN_CMD);
+        will_return(__wrap_ioctl, NSID);
+        will_return(__wrap_ioctl, NULL);
+        will_return(__wrap_ioctl, -1);
+        will_return(__wrap_ioctl, EUCLEAN);
+        expect_value(__wrap_close, fd, OPEN_FD);
+        will_return(__wrap_close, 0);
+
+        struct nvme_controller ctrl = {0};
+        snprintf(ctrl.name, sizeof(ctrl.name), "nvme0");
+        snprintf(ctrl.sys_path, sizeof(ctrl.sys_path), "%s", controller_path);
+        struct context ctx = {.output_format = PLAIN};
+        json_object *namespaces = json_object_new_array();
+        assert_non_null(namespaces);
+        enumerate_namespaces_for_controller(&ctrl, &ctx, namespaces);
+        json_object_put(namespaces);
+        _exit(EXIT_CODE_SUCCESS);
+    }
+    capture_wait(child, EXIT_CODE_NVME_IDENTIFY_NAMESPACE_IOCTL);
+    assert_int_equal(rmdir(first_namespace), 0);
+    assert_int_equal(rmdir(second_namespace), 0);
+    assert_int_equal(rmdir(controller_path), 0);
+    assert_string_equal(capture_stdout(), "");
+    assert_string_equal(capture_stderr(),
+                        "failed NVME_IOCTL_ADMIN_CMD ioctl for /dev/nvme0n1: Structure needs cleaning\n");
 }
 
 static int setup(void **state)
 {
     (void)state; // Unused parameter
 
+    fail_strndup = false;
+    fail_sysconf = false;
     capture_setup(state);
 
     return 0;
@@ -399,14 +766,21 @@ static int teardown(void **state)
 int main(void)
 {
     const struct CMUnitTest tests[] = {
+        cmocka_unit_test_setup_teardown(test_identify_udev_device_vs_failure, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_enumerate_namespaces_nsid_failure, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_enumerate_namespaces_vs_failure, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_command_failure, setup, teardown),
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_success, setup, teardown),
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_failure_to_open, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_failure_to_sysconf, setup, teardown),
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_failure_to_posix_memalign, setup, teardown),
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_failure_to_ioctl, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_vs_allocation_failure, setup, teardown),
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_vs_success, setup, teardown),
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_vs_failure, setup, teardown),
         cmocka_unit_test_setup_teardown(test_get_nsid_from_namespace_device_path_success, setup, teardown),
-        cmocka_unit_test_setup_teardown(test_get_nsid_from_namespace_device_path_failure, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_get_nsid_from_namespace_device_path_open_failure, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_get_nsid_from_namespace_device_path_ioctl_failure, setup, teardown),
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_vs_for_namespace_device_success, setup, teardown),
         cmocka_unit_test_setup_teardown(test_nvme_identify_namespace_vs_for_namespace_device_nsid_failure, setup,
                                         teardown),

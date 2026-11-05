@@ -35,7 +35,7 @@ Azure currently supports three NVMe disk controllers:
 - MSFT NVMe Accelerator v1
 
   - Provides remote NVMe disks attached to the VM including OS and data disks.
-  - All disks are currently found on one controller, future implementations may leverage multiple controllers.
+  - OS and data disks may share a controller or use separate controllers, depending on the VM size.
 
 - Microsoft NVMe Direct Disk v1
 

@@ -59,7 +59,6 @@ struct nvme_id_ns
 
 #define NVME_ADMIN_IDENTFY_NAMESPACE_OPCODE 0x06
 
-int nvme_nsid_from_namespace_device_path(const char *namespace_path);
 struct nvme_id_ns *nvme_identify_namespace(const char *device_path, int nsid);
 char *nvme_identify_namespace_vs(const char *device_path, int nsid);
 

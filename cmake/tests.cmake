@@ -23,23 +23,29 @@ function(add_test_executable test_name)
     endif()
 endfunction()
 
+add_test_executable(checked_tests
+    WRAPPED_FUNCTIONS strdup strndup json_object_new_array json_object_new_object json_object_new_string
+        json_object_new_int json_object_object_add json_object_array_add json_object_to_json_string_ext
+    SOURCES tests/checked_tests.c
+)
+
 add_test_executable(debug_tests
     WRAPPED_FUNCTIONS
     SOURCES src/debug.c tests/debug_tests.c
 )
 
 add_test_executable(identify_disks_tests
-    WRAPPED_FUNCTIONS nvme_identify_namespace_vs_for_namespace_device
+    WRAPPED_FUNCTIONS nvme_identify_namespace_vs get_nsid_from_namespace_device_path
     SOURCES src/debug.c src/identify_disks.c src/nvme.c tests/identify_disks_tests.c
     CFLAGS -DUNIT_TESTING_SYS_CLASS_NVME=1
 )
 
 add_test_executable(identify_udev_tests
-    WRAPPED_FUNCTIONS nvme_identify_namespace_vs_for_namespace_device
+    WRAPPED_FUNCTIONS nvme_identify_namespace_vs_for_namespace_device strdup
     SOURCES src/debug.c src/identify_udev.c src/nvme.c tests/identify_udev_tests.c
 )
 
 add_test_executable(nvme_tests
-    WRAPPED_FUNCTIONS open open64 posix_memalign ioctl __ioctl_time64 close
-    SOURCES src/nvme.c tests/nvme_tests.c
+    WRAPPED_FUNCTIONS open open64 posix_memalign ioctl __ioctl_time64 close strndup sysconf
+    SOURCES src/identify_disks.c src/identify_udev.c src/nvme.c tests/nvme_tests.c
 )

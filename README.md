@@ -89,52 +89,32 @@ execute with sudo.
 scp selfcheck/selftest.py $ip: && ssh $ip -- sudo ./selftest.py
 ```
 
+Selftest uses strict current-behavior checks by default. Use `--compat` to
+allow for features not present in older distro-packaged versions.
+Image tests enable compatibility for packaged utilities and keep strict
+checks when installing from source.
+
+## updating requirements
+
+To refresh the frozen selftest dependency list from
+[selftest/test-requirements.txt](selftest/test-requirements.txt), run:
+
+```sh
+./scripts/update-selftest-requirements.sh
+```
+
+This requires Docker and uses a Python 3.10 container to generate updated requirements.
+
 ## test_images
 
-To help automate a spread of tests, test_images provides functional testing for a set of pre-existing images,
-assuming azure-vm-utils is already installed.  It depends on az-cli, ssh, and ssh-keygen to create VMs
-and ssh into them to run the tests.
+Image tests create Azure VMs from marketplace and community images and run
+selftests over SSH. They require Azure CLI, `ssh`, and `ssh-keygen`.
 
-To run tests against marketplace and community images with azure-vm-utils:
+Tests use utilities installed in each image. Set `SELFTEST_INSTALL_FROM_SOURCE=1`
+to build and install from the working tree before testing.
 
-```
-SELFTEST_AZURE_SUBSCRIPTION=<subscription id> \
-SELFTEST_AZURE_LOCATION=eastus2 \
-pytest -v selftest
-```
-
-To run tests for custom images and vm sizes, the following variables are supported with comma-separated values:
-
-- SELFTEST_ARM64_IMAGES
-- SELFTEST_ARM64_VM_SIZES
-- SELFTEST_GEN1_IMAGES
-- SELFTEST_GEN1_VM_SIZES
-- SELFTEST_GEN2_IMAGES
-- SELFTEST_GEN2_VM_SIZES
-
-For example:
-
-```
-SELFTEST_AZURE_SUBSCRIPTION=<subscription id> \
-SELFTEST_AZURE_LOCATION=eastus2 \
-SELFTEST_GEN2_IMAGES=/my/image1,/my/image2,... \
-SELFTEST_GEN2_VM_SIZES=Standard_D2ds_v5,Standard_D2ds_v6,... \
-pytest -xvvvs -k test_gen2
-```
-
-For convenience, the default spread of VM sizes is assumed if SELFTEST_{ARM64|GEN1|GEN2}_VM_SIZES is unset.
-If unable to allocate VM, test is "skipped".
-
-Supported environment variables:
-
-- SELFTEST_ADMIN_USERNAME: admin name to configure VMs with
-- SELFTEST_ADMIN_PASSWORD: optional password to enable easy serial-console access
-- SELFTEST_ARTIFACTS_PATH: directory path to store artifacts under
-- SELFTEST_AZURE_LOCATION: location to use
-- SELFTEST_AZURE_SUBSCRIPTION: subscription to use
-- SELFTEST_HOLD_FAILURES: skip cleanup for failures
-- SELFTEST_REBOOTS: number of reboots to perform in test (default=50)
-- SELFTEST_RESOURCE_GROUP: optional RG to use, otherwise one is created
+See [test_images.py](selftest/test_images.py) for example runs, environment
+variables, and the test matrix.
 
 # Contributing
 

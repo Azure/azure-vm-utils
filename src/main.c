@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "debug.h"
+#include "exit_code.h"
 #include "identify_disks.h"
 #include "identify_udev.h"
 #include "version.h"
@@ -63,10 +64,10 @@ int main(int argc, char **argv)
             break;
         case 'v':
             print_version(argv[0]);
-            return 0;
+            return EXIT_CODE_SUCCESS;
         case 'h':
             print_help(argv[0]);
-            return 0;
+            return EXIT_CODE_SUCCESS;
         case 'f':
             if (strcmp(optarg, "json") == 0)
             {
@@ -79,13 +80,13 @@ int main(int argc, char **argv)
             else
             {
                 print_invalid_argument(argv[0], optarg);
-                return 1;
+                return EXIT_CODE_INVALID_ARGUMENT;
             }
             break;
         default:
             // Error for invalid --args
             print_invalid_argument(argv[0], argv[optind - 1]);
-            return 1;
+            return EXIT_CODE_INVALID_ARGUMENT;
         }
     }
 
@@ -93,7 +94,7 @@ int main(int argc, char **argv)
     if (optind < argc)
     {
         print_invalid_argument(argv[0], argv[optind]);
-        return 1;
+        return EXIT_CODE_INVALID_ARGUMENT;
     }
 
     if (debug)

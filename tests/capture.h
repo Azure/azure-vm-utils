@@ -7,8 +7,12 @@
 #ifndef __CAPTURE_H__
 #define __CAPTURE_H__
 
-void capture_setup(void **state);
-void capture_teardown(void **state);
+#include <sys/types.h>
+
+pid_t capture_fork(void);
+void capture_wait(pid_t child, int expected_status);
+int capture_setup(void **state);
+int capture_teardown(void **state);
 const char *capture_stdout();
 const char *capture_stderr();
 
