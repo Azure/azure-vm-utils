@@ -37,6 +37,10 @@ DEVNAME=/dev/nvme0n1 azure-nvme-id --udev
 
 # Rules for udev
 
+## 10-mana-cqe.rules
+
+Extend RX CQE coalescing up to 8 packets on supported hardware.
+
 ## 80-azure-disk.rules
 
 Provides helpful symlinks in /dev/disk/azure for local, data, and os disks.

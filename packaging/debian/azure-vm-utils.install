@@ -2,6 +2,7 @@
 /usr/lib/systemd/network/01-azure-unmanaged-sriov.network
 /usr/lib/systemd/system/azure-ephemeral-disk-setup.service
 /usr/lib/udev/rules.d/10-azure-unmanaged-sriov.rules
+/usr/lib/udev/rules.d/10-mana-cqe.rules
 /usr/lib/udev/rules.d/80-azure-disk.rules
 /usr/sbin/azure-ephemeral-disk-setup
 /usr/sbin/azure-nvme-id

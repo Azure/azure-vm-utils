@@ -1,0 +1,1 @@
+SUBSYSTEM=="net", ACTION!="remove", DRIVERS=="mana", RUN+="/usr/sbin/ethtool -C %k rx-cqe-frames 4", RUN+="/usr/sbin/ethtool -C %k rx-cqe-frames 8"
