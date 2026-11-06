@@ -19,6 +19,11 @@ azure-vm-utils-selftest - packaging self-tests
 **azure-vm-utils-selftest** validates functionailty related to azure-vm-utils package.
 
 These self-tests validate azure\-nvme\-id outputs and /dev/disk/azure symlinks.
+Legacy root, resource, SCSI controller/LUN and partition symlinks are checked
+against the VMBus topology, regardless of which package installed the rules.
+On matching Microsoft VMs, the SMBIOS product UUID must have mode 0444.
+These checks are also enabled in compatibility mode and are skipped with
+**\-\-skip-udev-validation**.
 
 # EXAMPLES
 

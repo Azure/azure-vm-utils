@@ -1,3 +1,6 @@
+install(FILES ${CMAKE_SOURCE_DIR}/udev/66-azure-storage.rules
+    ${CMAKE_SOURCE_DIR}/udev/99-azure-product-uuid.rules DESTINATION ${UDEV_RULES_INSTALL_DIR})
+
 # Install Azure unmanaged SR-IOV rules and configuration.
 install(FILES ${CMAKE_SOURCE_DIR}/udev/10-azure-unmanaged-sriov.rules DESTINATION ${UDEV_RULES_INSTALL_DIR})
 
