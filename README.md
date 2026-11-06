@@ -37,9 +37,51 @@ DEVNAME=/dev/nvme0n1 azure-nvme-id --udev
 
 # Rules for udev
 
+## 66-azure-storage.rules
+
+Provides WALinuxAgent-compatible disk and partition symlinks:
+
+```
+/dev/disk/azure/root
+/dev/disk/azure/root-part<partition>
+/dev/disk/azure/resource
+/dev/disk/azure/resource-part<partition>
+/dev/disk/azure/scsi<controller>/lun<lun>
+/dev/disk/azure/scsi<controller>/lun<lun>-part<partition>
+```
+
+Controllers range from 0 to 3. Controller 0 LUNs 0 and 1 use root and resource
+instead; controller 0 LUN 2 (CD-ROM) is excluded.
+
+Note that this purposely conflicts with WALinuxAgent udev rules
+as it is an exact match.
+
 ## 80-azure-disk.rules
 
-Provides helpful symlinks in /dev/disk/azure for local, data, and os disks.
+Provides disk and partition symlinks for OS, SCSI resource, data, and local NVMe disks:
+
+```
+/dev/disk/azure/data/by-lun/<lun>
+/dev/disk/azure/data/by-lun/<lun>-part<partition>
+/dev/disk/azure/local/by-index/<index>
+/dev/disk/azure/local/by-index/<index>-part<partition>
+/dev/disk/azure/local/by-name/<name>
+/dev/disk/azure/local/by-name/<name>-part<partition>
+/dev/disk/azure/local/by-serial/<serial>
+/dev/disk/azure/local/by-serial/<serial>-part<partition>
+/dev/disk/azure/os
+/dev/disk/azure/os-part<partition>
+/dev/disk/azure/resource
+/dev/disk/azure/resource-part<partition>
+```
+
+## 99-azure-product-uuid.rules
+
+Makes the SMBIOS product UUID readable by all local users (0444)
+on Microsoft VMs, including Hyper-V, matching WALinuxAgent.
+
+Note that this purposely conflicts with WALinuxAgent udev rules
+as it is an exact match.
 
 # Testing
 

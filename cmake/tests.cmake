@@ -1,6 +1,12 @@
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(CMOCKA REQUIRED cmocka)
 
+add_test(NAME udev_install_tests
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DTEST_DIR=${CMAKE_CURRENT_BINARY_DIR}/udev-install-tests
+        -P ${CMAKE_SOURCE_DIR}/tests/udev_install_tests.cmake)
+
 function(add_test_executable test_name)
     set(multiValueArgs WRAPPED_FUNCTIONS SOURCES CFLAGS)
     cmake_parse_arguments(TEST "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})

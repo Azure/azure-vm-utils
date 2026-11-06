@@ -11,6 +11,6 @@ depends() {
 
 # called by dracut
 install() {
-    inst_multiple azure-nvme-id cut readlink
-    inst_rules 80-azure-disk.rules
+    inst_multiple azure-nvme-id chmod cut readlink
+    inst_rules 66-azure-storage.rules 80-azure-disk.rules 99-azure-product-uuid.rules
 }

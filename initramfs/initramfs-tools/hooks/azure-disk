@@ -17,13 +17,15 @@ esac
 . /usr/share/initramfs-tools/hook-functions
 
 DESTINATION="${DESTDIR}/lib/udev/rules.d/"
-RULES_FILE="/usr/lib/udev/rules.d/80-azure-disk.rules"
+for rule in 66-azure-storage.rules 80-azure-disk.rules 99-azure-product-uuid.rules; do
+    RULES_FILE="/usr/lib/udev/rules.d/${rule}"
+    if [ -e "${RULES_FILE}" ]; then
+        mkdir -p "${DESTINATION}"
+        cp -p "${RULES_FILE}" "${DESTINATION}"
+    fi
+done
 
-if [ -e "${RULES_FILE}" ]; then
-    mkdir -p "${DESTINATION}"
-    cp -p "${RULES_FILE}" "${DESTINATION}"
-fi
-
-copy_exec "/usr/bin/cut" "${DESTDIR}/bin/"
-copy_exec "/usr/bin/readlink" "${DESTDIR}/bin/"
-copy_exec "/usr/sbin/azure-nvme-id" "${DESTDIR}/sbin/"
+copy_exec "/usr/bin/cut"
+copy_exec "/usr/bin/readlink"
+copy_exec "/bin/chmod"
+copy_exec "/usr/sbin/azure-nvme-id"

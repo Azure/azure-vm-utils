@@ -49,7 +49,9 @@ This package contains the self-test script for the Azure VM Utils package.
 %{_libdir}/systemd/network/01-azure-unmanaged-sriov.network
 %{_libdir}/systemd/system/azure-ephemeral-disk-setup.service
 %{_libdir}/udev/rules.d/10-azure-unmanaged-sriov.rules
+%{_libdir}/udev/rules.d/66-azure-storage.rules
 %{_libdir}/udev/rules.d/80-azure-disk.rules
+%{_libdir}/udev/rules.d/99-azure-product-uuid.rules
 %{_sbindir}/azure-ephemeral-disk-setup
 %{_sbindir}/azure-nvme-id
 %{_mandir}/man8/azure-ephemeral-disk-setup.8.gz

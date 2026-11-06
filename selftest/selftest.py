@@ -8,12 +8,14 @@
 """Azure VM utilities self-tests script."""
 
 import argparse
+import fnmatch
 import glob
 import json
 import logging
 import os
 import re
 import shlex
+import stat
 import subprocess
 import time
 import urllib.error
@@ -33,7 +35,9 @@ logger = logging.getLogger("selftest")
 # pylint: disable=too-many-locals
 
 SYS_CLASS_BLOCK = "/sys/class/block"
+SYS_CLASS_DMI_ID = "/sys/class/dmi/id"
 SYS_CLASS_NET = "/sys/class/net"
+
 AZURE_EPHEMERAL_DISK_SETUP_CONF = "/etc/azure-ephemeral-disk-setup.conf"
 AZURE_EPHEMERAL_DISK_SETUP_SERVICE = "azure-ephemeral-disk-setup.service"
 DEV_DISK_AZURE_RESOURCE = "/dev/disk/azure/resource"
@@ -1697,6 +1701,98 @@ class AzureVmUtilsValidator:
 
         logger.info("validate_dev_disk_azure_links_resource OK: %r", resource_disk)
 
+    def validate_dev_disk_azure_links_legacy(self) -> None:
+        """Validate legacy aliases against VMBus controllers and SCSI LUNs."""
+        controllers = {
+            "{f8b3781a-1e82-4818-a1c3-63d806ec15bb}": 0,
+            "{f8b3781b-1e82-4818-a1c3-63d806ec15bb}": 1,
+            "{f8b3781c-1e82-4818-a1c3-63d806ec15bb}": 2,
+            "{f8b3781d-1e82-4818-a1c3-63d806ec15bb}": 3,
+        }
+        expected = {}
+        excluded = []
+        for block in Path(SYS_CLASS_BLOCK).iterdir():
+            partition = block / "partition"
+            disk = block.resolve().parent if partition.exists() else block.resolve()
+            device = disk / "device"
+            vendor = device / "vendor"
+            model = device / "model"
+
+            if not vendor.is_file() or not model.is_file():
+                continue
+
+            if (
+                vendor.read_text(encoding="utf-8").strip() != "Msft"
+                or model.read_text(encoding="utf-8").strip() != "Virtual Disk"
+            ):
+                continue
+
+            device_id = ""
+            for parent in disk.parents:
+                device_id_path = parent / "device_id"
+                if device_id_path.is_file():
+                    device_id = device_id_path.read_text(encoding="utf-8").strip()
+                    break
+
+            suffix = (
+                f"-part{int(partition.read_text(encoding='utf-8'))}"
+                if partition.exists()
+                else ""
+            )
+
+            if fnmatch.fnmatchcase(device_id, "?00000000-0000-*"):
+                name = "root"
+            elif fnmatch.fnmatchcase(device_id, "?00000000-0001-*"):
+                name = "resource"
+            elif device_id in controllers:
+                controller = controllers[device_id]
+                lun = int(device.resolve().name.rsplit(":", 1)[-1])
+                name = f"scsi{controller}/lun{lun}"
+                if controller == 0 and lun in (0, 1, 2):
+                    excluded.append(Path("/dev/disk/azure", name + suffix))
+                    if lun == 2:
+                        continue
+
+                    name = "root" if lun == 0 else "resource"
+            else:
+                continue
+
+            expected[Path("/dev/disk/azure", name + suffix)] = Path("/dev", block.name)
+
+        for link, target in expected.items():
+            assert link.is_symlink(), f"missing legacy disk symlink: {link}"
+            assert link.exists(), f"dangling legacy disk symlink: {link}"
+            assert (
+                link.resolve() == target.resolve()
+            ), f"legacy disk symlink target mismatch: {link} => {link.resolve()} (expected {target})"
+
+        for link in excluded:
+            assert not os.path.lexists(link), f"unexpected legacy disk symlink: {link}"
+
+        logger.info("validate_dev_disk_azure_links_legacy OK: %r", expected)
+
+    def validate_product_uuid(self) -> None:
+        """Validate the UUID rule's permissions on matching DMI devices."""
+        dmi = Path(SYS_CLASS_DMI_ID)
+        vendor = dmi / "sys_vendor"
+        product = dmi / "product_name"
+        product_uuid = dmi / "product_uuid"
+        if (
+            not vendor.is_file()
+            or not product.is_file()
+            or vendor.read_text(encoding="utf-8").strip() != "Microsoft Corporation"
+            or product.read_text(encoding="utf-8").strip() != "Virtual Machine"
+            or not product_uuid.exists()
+        ):
+            logger.info("validate_product_uuid SKIPPED: no matching Microsoft DMI UUID")
+            return
+
+        mode = stat.S_IMODE(product_uuid.stat().st_mode)
+        assert (
+            mode == 0o444
+        ), f"unexpected product UUID mode: {mode:04o} (expected 0444)"
+        logger.info("validate_product_uuid OK: mode=%04o", mode)
+
     def validate_mounts(self) -> None:
         """Ensure SCSI resource disk and/or NVMe local disks are mounted correctly."""
         self.mount_info.validate(
@@ -1793,6 +1889,8 @@ class AzureVmUtilsValidator:
             logger.info("validate_dev_disk_azure_links_local SKIPPED")
             logger.info("validate_dev_disk_azure_links_os SKIPPED")
             logger.info("validate_dev_disk_azure_links_resource SKIPPED")
+            logger.info("validate_dev_disk_azure_links_legacy SKIPPED")
+            logger.info("validate_product_uuid SKIPPED")
             logger.info("validate_mounts SKIPPED")
             logger.info("validate_scsi_resource_disk SKIPPED")
             logger.info("validate_services SKIPPED")
@@ -1803,6 +1901,8 @@ class AzureVmUtilsValidator:
             self.validate_dev_disk_azure_links_local()
             self.validate_dev_disk_azure_links_os()
             self.validate_dev_disk_azure_links_resource()
+            self.validate_dev_disk_azure_links_legacy()
+            self.validate_product_uuid()
             self.validate_mounts()
             self.validate_networking()
             self.validate_nvme_io_timeouts()
